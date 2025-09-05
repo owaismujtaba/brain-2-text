@@ -85,7 +85,7 @@ class H5pyDataset(Dataset):
         filtered_files = [f for f in self.all_filepaths if keyword in os.path.basename(f)]
         if not filtered_files:
             self.logger.warning(f"No files found with keyword '{keyword}' in directory '{self.data_dir}'")
-        return filtered_files[:1]
+        return filtered_files
 
     def build_index(self):
         """Builds an index of all trials across the relevant files. Do not load all data into memory."""
