@@ -1,12 +1,14 @@
-import numpy as np
+import os
 import torch
 from tqdm import tqdm
 import torch.nn as nn
 import pdb
 class Trainer:
-    def __init__(self, model, config):
+    def __init__(self, model, config, logger=None):
         self.model = model
         self.config = config
+        self.logger = logger
+        self.logger.info("Initializing Trainer")
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         
@@ -17,13 +19,14 @@ class Trainer:
         self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
         # Training parameters
         self.num_epochs = config.get('training', {}).get('num_epochs', 100)
-        self.eval_interval = config.get('training', {}).get('eval_interval', 1)
+        self.eval_interval = config.get('training', {}).get('eval_interval')
         
         # Best model tracking
         self.best_val_loss = float('inf')
         
     def train(self, train_loader, val_loader):
         """Main training loop"""
+        self.logger.info("Starting training process")
         for epoch in range(self.num_epochs):
             # Training phase
             self.model.train()
@@ -32,9 +35,10 @@ class Trainer:
             # Validation phase
             if (epoch + 1) % self.eval_interval == 0:
                 self.model.eval()
+                self.logger.info("Validating model...")
+                 # Compute validation loss
                 val_loss = self._validate(val_loader)
-                
-                # Update learning rate scheduler
+                 # Update learning rate scheduler
                 self.scheduler.step(val_loss)
                 
                 # Save best model
@@ -42,15 +46,16 @@ class Trainer:
                     self.best_val_loss = val_loss
                     self._save_checkpoint(epoch, val_loss)
                 
-                print(f'Epoch {epoch+1}/{self.num_epochs}:')
-                print(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
+                self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
     
     def _train_epoch(self, train_loader):
         """Train for one epoch"""
         epoch_loss = 0
         num_batches = len(train_loader)
         
-        for batch in tqdm(train_loader, desc='Training'):
+        pbar = tqdm(train_loader, desc='Training')
+        for batch in pbar:
             self.optimizer.zero_grad()
             
             # Get batch data
@@ -75,7 +80,11 @@ class Trainer:
             # Update weights
             self.optimizer.step()
             
-            epoch_loss += loss.item()
+            current_loss = loss.item()
+            epoch_loss += current_loss
+            
+            # Update progress bar with current loss
+            pbar.set_postfix({'loss': f'{current_loss:.4f}'})
             
         return epoch_loss / num_batches
     
@@ -91,8 +100,7 @@ class Trainer:
                 
                 # Forward pass
                 logits = self.model(inputs, seq_lengths)
-                import pdb;
-                pdb.set_trace()
+                
                 # Compute loss
                 loss = self.criterion(
                     log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
@@ -122,6 +130,7 @@ class Trainer:
     
     def _save_checkpoint(self, epoch, val_loss):
         """Save model checkpoint"""
+        self.logger.info(f"Saving checkpoint for epoch {epoch+1} with val_loss {val_loss:.4f}")
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -130,7 +139,13 @@ class Trainer:
             'val_loss': val_loss,
             'config': self.config
         }
-        checkpoint_path = self.config.get('training', {}).get(
-            'checkpoint_path', 'checkpoint.pt'
-        )
+        checkpoint_path = self.config.get('training', {}).get('checkpoints_dir')
+        os.makedirs(checkpoint_path, exist_ok=True)
+        
+        filename = f'checkpoint_epoch_{epoch+1:03d}_loss_{val_loss:.4f}.pth'
+        checkpoint_path = os.path.join(checkpoint_path, filename)
+        
         torch.save(checkpoint, checkpoint_path)
+        
+        best_model_path = os.path.join(os.path.dirname(checkpoint_path), 'best_model.pth')
+        torch.save(checkpoint, best_model_path)

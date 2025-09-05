@@ -53,4 +53,5 @@ def get_all_files(parent_dir, extensions=None):
         for file in files:
             if extensions is None or file.lower().endswith(extensions):
                 all_files.append(os.path.join(root, file))
+                
     return all_files
