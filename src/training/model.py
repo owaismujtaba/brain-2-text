@@ -6,7 +6,7 @@ class BrainToTextModel(nn.Module):
     def __init__(self, config):
         super().__init__()
         # Get model parameters from config
-        self.input_dim = config.get('model', {}).get('input_dim', 256)
+        self.input_dim = config.get('model', {}).get('input_dim', 512)
         self.hidden_dim = config.get('model', {}).get('hidden_dim', 512)
         self.num_layers = config.get('model', {}).get('num_layers', 2)
         self.num_classes = config.get('model', {}).get('num_classes', 41)  # Vocabulary size
@@ -73,7 +73,6 @@ class BrainToTextModel(nn.Module):
             mode='min',
             factor=0.5,
             patience=5,
-            verbose=True
         )
         
         return optimizer, scheduler

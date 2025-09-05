@@ -18,18 +18,18 @@ dataset:
 
 training:
   epochs: 50
-  batch_size: 16
+  batch_size: 32
   learning_rate: 0.001
-  validation_split: 0.2
-  checkpoint_path: 'checkpoints/model.pth'
+  output_dir: 'outputs/'
+  checkpoints_dir: 'checkpoints/'
 
 model:
-  input_dim: 256 
+  input_dim: 512 
   hidden_dim: 512
   num_layers: 2
   num_classes: 41  # Vocabulary size
   dropout: 0.1
 
-  
+
 
 
