@@ -61,18 +61,24 @@ class H5pyDataReader:
 
 
 class H5pyDataset(Dataset):
-    def __init__(self, data_dir, logger, kind='train'):
-        from .utils import get_all_files  # Your utility to get all files in a dir
+    def __init__(self, config, logger, kind='train'):
+        """
+        Dataset for loading and padding data from HDF5 files in a directory for train/val splits.
+        Expects config to be a dict-like object containing 'data_dir'.
+        Instead of loading all data into memory, only indexes are stored and data is loaded at runtime.
+        """
+        from .utils import get_all_files
         self.logger = logger
-        self.data_dir = data_dir
+        self.data_dir = config.get('dataset', {}).get('data_folder', None)
+        if not self.data_dir:
+            raise ValueError("Config must contain 'data_dir' key.")
 
         # Get all HDF5 files
         self.all_filepaths = get_all_files(self.data_dir, extensions=('.hdf5',))
         self.relevant_filepaths = self.filter_filepaths(kind)
-        self.data = None
-        self.length = 0
+        self.index_map = []  # List of (file_path, trial_key) tuples
 
-        self.load_data()  # Load and pad data
+        self.build_index()  # Build index of all trials
 
     def filter_filepaths(self, keyword):
         self.logger.info(f"Filtering files in {self.data_dir} with keyword '{keyword}'")
@@ -81,35 +87,16 @@ class H5pyDataset(Dataset):
             self.logger.warning(f"No files found with keyword '{keyword}' in directory '{self.data_dir}'")
         return filtered_files
 
-    def load_data(self):
-        all_data = {key: [] for key in [
-            'neural_features', 'n_time_steps', 'seq_class_ids', 'seq_len',
-            'transcriptions', 'sentence_label', 'session', 'block_num', 'trial_num']}
-
-        # Load all files
+    def build_index(self):
+        """Builds an index of all trials across the relevant files. Do not load all data into memory."""
+        import h5py
+        self.logger.info("Building index of all trials...")
         for file_path in self.relevant_filepaths:
-            self.logger.info(f"Loading data from {file_path}")
-            reader = H5pyDataReader(file_path, self.logger)
-            data = reader.get_dataset()
-            for key in all_data:
-                all_data[key].extend(data[key])
-
-        # Pad sequences
-        all_data['neural_features'] = pad_sequence(all_data['neural_features'], batch_first=True, padding_value=0)
-
-        # Handle optional seq_class_ids
-        valid_seq_class_ids = [x for x in all_data['seq_class_ids'] if x is not None]
-        if valid_seq_class_ids:
-            all_data['seq_class_ids'] = pad_sequence(valid_seq_class_ids, batch_first=True, padding_value=0)
-        else:
-            all_data['seq_class_ids'] = None
-
-        self.logger.info(f"features shape after padding: {all_data['neural_features'].shape}")
-        self.logger.info(f"seq_class_ids shape after padding: {all_data['seq_class_ids'].shape if all_data['seq_class_ids'] is not None else 'None'}")
-
-        self.data = all_data
-        self.length = len(self.data['neural_features'])
-        self.logger.info(f"Loaded {self.length} trials from {len(self.relevant_filepaths)} files.")
+            with h5py.File(file_path, 'r') as f:
+                for key in f.keys():
+                    self.index_map.append((file_path, key))
+        self.length = len(self.index_map)
+        self.logger.info(f"Indexed {self.length} trials from {len(self.relevant_filepaths)} files.")
 
     def __len__(self):
         return self.length
@@ -117,16 +104,45 @@ class H5pyDataset(Dataset):
     def __getitem__(self, idx):
         if idx < 0 or idx >= self.length:
             raise IndexError("Index out of range.")
+        file_path, trial_key = self.index_map[idx]
+        import h5py
+        with h5py.File(file_path, 'r') as f:
+            g = f[trial_key]
+            neural_features = torch.tensor(g['input_features'][:], dtype=torch.float32)
+            n_time_steps = g.attrs.get('n_time_steps', neural_features.shape[0])
+            seq_class_ids = torch.tensor(g['seq_class_ids'][:], dtype=torch.long) if 'seq_class_ids' in g else None
+            seq_len = g.attrs.get('seq_len', None)
+            transcription = g['transcription'][:] if 'transcription' in g else None
+            sentence_label = g.attrs.get('sentence_label', None)
+            session = g.attrs.get('session', None)
+            block_num = g.attrs.get('block_num', None)
+            trial_num = g.attrs.get('trial_num', None)
 
-        item = {key: self.data[key][idx] if self.data[key] is not None else None for key in self.data}
+            item = {
+                'neural_features': neural_features,
+                'n_time_steps': n_time_steps,
+                'seq_class_ids': seq_class_ids,
+                'seq_len': seq_len,
+                'transcriptions': transcription,
+                'sentence_label': sentence_label,
+                'session': session,
+                'block_num': block_num,
+                'trial_num': trial_num
+            }
         return item
 
 
 class DatasetLoader:
-    def __init__(self, data_dir, logger):
+    def __init__(self, config, logger):
         self.logger = logger
-        self.data_dir = data_dir
+        self.config = config
 
     def get_dataloader(self, kind='train'):
-        dataset = H5pyDataset(self.data_dir, self.logger, kind)
-        return dataset
+        from src.dataset.utils import collate_fn
+        dataset = H5pyDataset(self.config, self.logger, kind)
+        batch_size = self.config.get('training', {}).get('batch_size', 16)
+        dataloader = DataLoader(dataset, batch_size, shuffle=True, collate_fn=collate_fn)
+        self.logger.info(f"Created DataLoader for {kind} with batch size {batch_size}")
+        return dataloader
+
+

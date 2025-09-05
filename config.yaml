@@ -10,10 +10,26 @@ logging:
   log_file_path: 'logs/experiment.log'
 
 run:
-  mode: train  # Options: train, evaluate, predict
+  mode: train  # Options: train, inference
   random_seed: 42
 
 dataset:
   data_folder: 'data/'
+
+training:
+  epochs: 50
+  batch_size: 16
+  learning_rate: 0.001
+  validation_split: 0.2
+  checkpoint_path: 'checkpoints/model.pth'
+
+model:
+  input_dim: 256 
+  hidden_dim: 512
+  num_layers: 2
+  num_classes: 41  # Vocabulary size
+  dropout: 0.1
+
+  
 
 
