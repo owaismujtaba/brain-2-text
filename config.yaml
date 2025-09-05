@@ -1,0 +1,19 @@
+experiment:
+  name: brain-2-text
+  description: Text decodinf from brain signals
+  version: 1.0.0
+
+logging:
+  name: brain2text
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  log_file_path: 'logs/experiment.log'
+
+run:
+  mode: train  # Options: train, evaluate, predict
+  random_seed: 42
+
+dataset:
+  data_folder: 'data/'
+
+
