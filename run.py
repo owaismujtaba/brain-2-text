@@ -29,4 +29,6 @@ if __name__ == "__main__":
         trainer = Trainer(model, config, logger)
         trainer.train(train_loader, val_loader)
 
+    if config.get('run')['mode'] == 'test':
+        pass
         

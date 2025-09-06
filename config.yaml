@@ -17,11 +17,11 @@ dataset:
   data_folder: 'data/'
 
 training:
-  epochs: 10
+  epochs: 100
   batch_size: 64
   learning_rate: 0.001
   output_dir: 'outputs/'
-  eval_interval: 2
+  eval_interval: 5  # Interval (in epochs) to perform evaluation
   checkpoints_dir: 'checkpoints/'
 
 model:

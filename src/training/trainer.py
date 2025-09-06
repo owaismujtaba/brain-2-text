@@ -2,6 +2,9 @@ import os
 import torch
 from tqdm import tqdm
 import torch.nn as nn
+
+from src.evaluation.eval import compute_phenome_error
+
 import pdb
 class Trainer:
     def __init__(self, model, config, logger=None):
@@ -19,7 +22,7 @@ class Trainer:
         self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
         # Training parameters
         self.num_epochs = config.get('training', {}).get('num_epochs', 100)
-        self.eval_interval = config.get('training', {}).get('eval_interval')
+        self.eval_interval = config.get('training', {}).get('eval_interval', 10)
         
         # Best model tracking
         self.best_val_loss = float('inf')
@@ -37,17 +40,17 @@ class Trainer:
                 self.model.eval()
                 self.logger.info("Validating model...")
                  # Compute validation loss
-                val_loss = self._validate(val_loader)
+                val_loss, per = self._validate(val_loader)
                  # Update learning rate scheduler
                 self.scheduler.step(val_loss)
                 
                 # Save best model
                 if val_loss < self.best_val_loss:
                     self.best_val_loss = val_loss
-                    self._save_checkpoint(epoch, val_loss)
+                    self._save_checkpoint(epoch, val_loss, per)
                 
                 self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
-                self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
     
     def _train_epoch(self, train_loader):
         """Train for one epoch"""
@@ -99,7 +102,7 @@ class Trainer:
                 inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
                 
                 # Forward pass
-                logits = self.model(inputs, seq_lengths)
+                logits = self.model(inputs)
                 
                 # Compute loss
                 loss = self.criterion(
@@ -111,8 +114,9 @@ class Trainer:
                 
                 
                 total_loss += loss.item()
+                per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
         
-        return total_loss / num_batches
+        return total_loss / num_batches, per
     
     def _prepare_batch(self, batch):
         """Prepare batch data for training/validation"""
@@ -128,9 +132,9 @@ class Trainer:
 
         return inputs, seq_class_ids, seq_lengths, phenome_seq_lengths
     
-    def _save_checkpoint(self, epoch, val_loss):
+    def _save_checkpoint(self, epoch, val_loss, per):
         """Save model checkpoint"""
-        self.logger.info(f"Saving checkpoint for epoch {epoch+1} with val_loss {val_loss:.4f}")
+        self.logger.info(f"Saving checkpoint for epoch {epoch+1} with val_loss {val_loss:.4f}; PER: {per:.4f}")
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -142,7 +146,7 @@ class Trainer:
         checkpoint_path = self.config.get('training', {}).get('checkpoints_dir')
         os.makedirs(checkpoint_path, exist_ok=True)
         
-        filename = f'checkpoint_epoch_{epoch+1:03d}_loss_{val_loss:.4f}.pth'
+        filename = f'checkpoint_epoch-{epoch+1:03d}_loss-{val_loss:.4f}_per-{per}.pth'
         checkpoint_path = os.path.join(checkpoint_path, filename)
         
         torch.save(checkpoint, checkpoint_path)
