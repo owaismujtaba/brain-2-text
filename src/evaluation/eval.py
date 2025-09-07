@@ -21,16 +21,18 @@ def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_length
 
     for i in range(logits.size(0)):
         # Greedy decoding: pick max class ID per timestep
+        print(decoded.size())
         decoded = torch.argmax(logits[i, :seq_lengths[i]], dim=-1)
-
+        print(decoded)
         # Collapse repeats and remove blanks (id=0)
         decoded = torch.unique_consecutive(decoded)
+        print(decoded)
         decoded = decoded[decoded != 0]
-
+        print(decoded)
         # Ground truth sequence
         true_seq = seq_class_ids[i, :phenome_seq_lengths[i]]
         print(true_seq)
-        print(decoded[:seq_class_ids.size(1)])
+        
         print(decoded)
         # Compute edit distance (torch expects tensors, not numpy)
         batch_edit_distance += F.edit_distance(decoded, true_seq)
