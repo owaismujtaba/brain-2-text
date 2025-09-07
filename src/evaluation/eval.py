@@ -1,5 +1,5 @@
 import torch
-import editdistance
+import torchaudio.functional as F
 
 def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths):
     """
@@ -21,7 +21,7 @@ def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_length
 
         true_seq = seq_class_ids[i, :phenome_seq_lengths[i]].cpu().numpy()
 
-        batch_edit_distance += editdistance.eval(decoded, true_seq)
+        batch_edit_distance += F.edit_distance(decoded, true_seq)
     
     total_phenomes = phenome_seq_lengths.sum().item()
     per = batch_edit_distance / total_phenomes if total_phenomes > 0 else 0.0
