@@ -127,7 +127,7 @@ class Trainer:
                 total_loss += loss.item()
                 per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
-            pbar.set_postfix(f"loss: {loss.item():.4f}, PER: f'{per:.4f}")
+            pbar.set_postfix({'loss': f'{loss.item():.4f}', 'PER': f'{per:.4f}'})
         return total_loss / num_batches, total_per / num_batches
     
     def _prepare_batch(self, batch):
