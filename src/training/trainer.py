@@ -105,6 +105,9 @@ class Trainer:
         num_batches = len(val_loader)
         
         with torch.no_grad():
+            total_per = 0
+            per = 0
+            pbar = tqdm(val_loader, desc='Training')
             for batch in val_loader:
                 # Get batch data
                 inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
@@ -123,8 +126,9 @@ class Trainer:
                 
                 total_loss += loss.item()
                 per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
-        
-        return total_loss / num_batches, per
+                total_per += per
+            pbar.set_postfix(f"loss: {loss.item():.4f}, PER: f'{per:.4f}")
+        return total_loss / num_batches, total_per / num_batches
     
     def _prepare_batch(self, batch):
         """Prepare batch data for training/validation"""
