@@ -30,6 +30,7 @@ def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_length
         # Ground truth sequence
         true_seq = seq_class_ids[i, :phenome_seq_lengths[i]]
         print(true_seq)
+        print(decoded[:seq_class_ids.size(1)])
         print(decoded)
         # Compute edit distance (torch expects tensors, not numpy)
         batch_edit_distance += F.edit_distance(decoded, true_seq)
