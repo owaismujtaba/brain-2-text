@@ -12,20 +12,28 @@ class Trainer:
         self.config = config
         self.logger = logger
         self.logger.info("Initializing Trainer")
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model.to(self.device)
-        
-        # Initialize optimizer and scheduler
+        self._device_setup()
         self.optimizer, self.scheduler = model.configure_optimizers(config)
-        
-        # Loss function
         self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
-        # Training parameters
         self.num_epochs = config.get('training', {}).get('num_epochs', 100)
         self.eval_interval = config.get('training', {}).get('eval_interval', 10)
-        
-        # Best model tracking
         self.best_val_loss = float('inf')
+
+    def _device_setup(self):
+        """Setup device and move model to device"""
+        self.logger.info("Setting up device")
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+            if torch.cuda.device_count() > 1:
+                self.logger.info(f"Using {torch.cuda.device_count()} GPUs")
+                self.model = nn.DataParallel(self.model)
+        else:
+            self.device = torch.device('cpu')
+            self.logger.info(f"Using device: {self.device}")
+        self.model.to(self.device)
+
+        
+        
         
     def train(self, train_loader, val_loader):
         """Main training loop"""
