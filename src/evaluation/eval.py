@@ -21,7 +21,7 @@ def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_length
 
     for i in range(logits.size(0)):
         # Greedy decoding: pick max class ID per timestep
-        print(decoded.size())
+     
         decoded = torch.argmax(logits[i, :seq_lengths[i]], dim=-1)
         print(decoded)
         # Collapse repeats and remove blanks (id=0)
