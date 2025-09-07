@@ -73,7 +73,7 @@ class Trainer:
             inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
             
             # Forward pass
-            logits = self.model(inputs, seq_lengths)
+            logits = self.model(inputs)
             # Compute loss
             loss = self.criterion(
                 log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
