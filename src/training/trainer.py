@@ -68,7 +68,7 @@ class Trainer:
         pbar = tqdm(train_loader, desc='Training')
         for batch in pbar:
             self.optimizer.zero_grad()
-            
+           
             # Get batch data
             inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
             
