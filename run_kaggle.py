@@ -9,7 +9,7 @@ if __name__ == "__main__":
     data_dir = '/kaggle/input/brain-to-text-25/t15_copyTask_neuralData/hdf5_data_final'
     
     config = load_yaml_config('/kaggle/working/brain-2-text/config.yaml')
-    config['dataset']['data_dir'] = data_dir
+    config['dataset']['data_folder'] = data_dir
     print("Configuration Loaded:")
     for key, value in config.items():
         print(f"{key}: {value}")
