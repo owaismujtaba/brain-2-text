@@ -18,13 +18,13 @@ if __name__ == "__main__":
             format=config.get('logging')['format']
         )
     if config.get('run')['mode'] == 'train':
-        logger.info("Starting training mode")
+        logger.info("*************Mode: Train*************")
         from src.dataset.dataset import DatasetLoader
         from src.training.trainer import Trainer
         from src.training.model import BrainToTextModel
         train_loader = DatasetLoader(config, logger).get_dataloader(kind='train')
         val_loader = DatasetLoader(config, logger).get_dataloader(kind='val')
-
+        
         model = BrainToTextModel(config)
         trainer = Trainer(model, config, logger)
         trainer.train(train_loader, val_loader)
