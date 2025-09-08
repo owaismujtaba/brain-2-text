@@ -76,3 +76,4 @@ class BrainToTextModel(nn.Module):
         )
         
         return optimizer, scheduler
+        
