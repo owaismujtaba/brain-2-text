@@ -99,3 +99,20 @@ class BrainToTextModel(nn.Module):
 
         logits = self.classifier(x)
         return logits
+
+    def configure_optimizers(self, config):
+        """Configure optimizer and learning rate scheduler"""
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=config.get('training', {}).get('learning_rate', 1e-3),
+            weight_decay=config.get('training', {}).get('weight_decay', 1e-5)
+        )
+        
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,
+            patience=5,
+        )
+        
+        return optimizer, scheduler
