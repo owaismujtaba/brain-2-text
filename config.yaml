@@ -14,9 +14,10 @@ run:
   random_seed: 42
 
 dataset:
-  data_folder: 'data/'
+  data_folder: '/home/owais/Desktop/work/brain-2-text/data'
 
 training:
+  must_include_days: 5
   epochs: 100
   batch_size: 64
   learning_rate: 0.001

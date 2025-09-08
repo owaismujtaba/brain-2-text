@@ -1,0 +1,151 @@
+import os
+import torch
+import h5py
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from src.dataset.utils import get_all_files
+import pdb
+
+
+class H5pyDataReader:
+    def __init__(self, file_path, logger):
+        self.logger = logger
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"The file {file_path} does not exist.")
+        self.file = h5py.File(file_path, 'r')
+        self.data = self.read_all_trials()
+
+    def get_dataset(self):
+        return self.data
+
+    def read_all_trials(self):
+        self.logger.info("Reading all trials from the HDF5 file")
+        data = {
+            'neural_features': [],
+            'n_time_steps': [],
+            'seq_class_ids': [],
+            'seq_len': [],
+            'transcriptions': [],
+            'sentence_label': [],
+            'session': [],
+            'block_num': [],
+            'trial_num': [],
+        }
+
+        for key in self.file.keys():
+            g = self.file[key]
+
+            # Required fields
+            neural_features = g['input_features'][:]
+            n_time_steps = g.attrs.get('n_time_steps', neural_features.shape[0])
+
+            # Optional fields
+            seq_class_ids = g['seq_class_ids'][:] if 'seq_class_ids' in g else None
+            seq_len = g.attrs.get('seq_len', None)
+            transcription = g['transcription'][:] if 'transcription' in g else None
+            sentence_label = g.attrs.get('sentence_label', None)
+            session = g.attrs.get('session', None)
+            block_num = g.attrs.get('block_num', None)
+            trial_num = g.attrs.get('trial_num', None)
+
+            # Append to dictionary
+            data['neural_features'].append(torch.tensor(neural_features, dtype=torch.float32))
+            data['n_time_steps'].append(n_time_steps)
+            data['seq_class_ids'].append(torch.tensor(seq_class_ids, dtype=torch.long) if seq_class_ids is not None else None)
+            data['seq_len'].append(seq_len)
+            data['transcriptions'].append(transcription)
+            data['sentence_label'].append(sentence_label)
+            data['session'].append(session)
+            data['block_num'].append(block_num)
+            data['trial_num'].append(trial_num)
+
+        return data
+
+
+class H5pyDataset(Dataset):
+    def __init__(self, config, logger, kind='train'):
+        """
+        Dataset for loading and padding data from HDF5 files in a directory for train/val splits.
+        Expects config to be a dict-like object containing 'data_dir'.
+        Instead of loading all data into memory, only indexes are stored and data is loaded at runtime.
+        """
+        
+        self.logger = logger
+        self.data_dir = config.get('dataset', {}).get('data_folder', None)
+        if not self.data_dir:
+            raise ValueError("Config must contain 'data_dir' key.")
+
+        
+        self.all_filepaths = get_all_files(self.data_dir, extensions=('.hdf5',))
+        
+        self.relevant_filepaths = self.filter_filepaths(kind)
+        self.index_map = []  # List of (file_path, trial_key) tuples
+
+        self.build_index()  # Build index of all trials
+
+    def filter_filepaths(self, keyword):
+        self.logger.info(f"Filtering files in {self.data_dir} with keyword '{keyword}'")
+        filtered_files = [f for f in self.all_filepaths if keyword in os.path.basename(f)]
+        if not filtered_files:
+            self.logger.warning(f"No files found with keyword '{keyword}' in directory '{self.data_dir}'")
+        return filtered_files
+
+    def build_index(self):
+        """Builds an index of all trials across the relevant files. Do not load all data into memory."""
+        
+        self.logger.info("Building index of all trials...")
+        for file_path in self.relevant_filepaths:
+            with h5py.File(file_path, 'r') as f:
+                for key in f.keys():
+                    self.index_map.append((file_path, key))
+        self.length = len(self.index_map)
+        self.logger.info(f"Indexed {self.length} trials from {len(self.relevant_filepaths)} files.")
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        if idx < 0 or idx >= self.length:
+            raise IndexError("Index out of range.")
+        file_path, trial_key = self.index_map[idx]
+        
+        with h5py.File(file_path, 'r') as f:
+            g = f[trial_key]
+            neural_features = torch.tensor(g['input_features'][:], dtype=torch.float32)
+            n_time_steps = g.attrs.get('n_time_steps', neural_features.shape[0])
+            seq_class_ids = torch.tensor(g['seq_class_ids'][:], dtype=torch.long) if 'seq_class_ids' in g else None
+            seq_len = g.attrs.get('seq_len', None)
+            transcription = g['transcription'][:] if 'transcription' in g else None
+            sentence_label = g.attrs.get('sentence_label', None)
+            session = g.attrs.get('session', None)
+            block_num = g.attrs.get('block_num', None)
+            trial_num = g.attrs.get('trial_num', None)
+
+            item = {
+                'neural_features': neural_features,
+                'n_time_steps': n_time_steps,
+                'seq_class_ids': seq_class_ids,
+                'seq_len': seq_len,
+                'transcriptions': transcription,
+                'sentence_label': sentence_label,
+                'session': session,
+                'block_num': block_num,
+                'trial_num': trial_num
+            }
+        return item
+
+
+class DatasetLoader:
+    def __init__(self, config, logger):
+        self.logger = logger
+        self.config = config
+
+    def get_dataloader(self, kind='train'):
+        from src.dataset.utils import collate_fn
+        dataset = H5pyDataset(self.config, self.logger, kind)
+        batch_size = self.config.get('training', {}).get('batch_size', 16)
+        dataloader = DataLoader(dataset, batch_size, shuffle=True, collate_fn=collate_fn)
+        self.logger.info(f"Created DataLoader for {kind} with batch size {batch_size}")
+        return dataloader
+
+

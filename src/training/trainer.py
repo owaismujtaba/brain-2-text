@@ -17,7 +17,7 @@ class Trainer:
         self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
         self.num_epochs = config.get('training', {}).get('num_epochs', 100)
         self.eval_interval = config.get('training', {}).get('eval_interval', 10)
-        self.best_val_loss = float('inf')
+        self.best_per = float('inf')
 
     def _device_setup(self):
         """Setup device and move model to device"""
@@ -53,8 +53,8 @@ class Trainer:
                 self.scheduler.step(val_loss)
                 
                 # Save best model
-                if val_loss < self.best_val_loss:
-                    self.best_val_loss = val_loss
+                if per < self.best_per:
+                    self.best_per = per 
                     self._save_checkpoint(epoch, val_loss, per)
                 
                 self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
