@@ -54,7 +54,7 @@ class Trainer:
                 
                 # Save best model
                 if per < self.best_per:
-                    self.best_per = per 
+                    self.best_per = per
                     self._save_checkpoint(epoch, val_loss, per)
                 
                 self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
@@ -71,8 +71,6 @@ class Trainer:
            
             # Get batch data
             inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
-
-            
             
             # Forward pass
             logits = self.model(inputs)
@@ -109,11 +107,11 @@ class Trainer:
         with torch.no_grad():
             total_per = 0
             per = 0
-            pbar = tqdm(val_loader, desc='Training')
+            pbar = tqdm(val_loader, desc='Validating')
             for batch in val_loader:
                 # Get batch data
-                inputs, seq_class_ids, seq_lengths, phenome_seq_lengths, sentence_labels = self._prepare_batch(batch)
-
+                inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
+                
                 # Forward pass
                 logits = self.model(inputs)
                 
@@ -129,7 +127,9 @@ class Trainer:
                 total_loss += loss.item()
                 per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
-            pbar.set_postfix({'loss': f'{loss.item():.4f}', 'PER': f'{per:.4f}'})
+                pbar.set_postfix({'loss': f'{loss.item():.4f}', 'PER': f'{per:.4f}'})
+        
+        
         return total_loss / num_batches, total_per / num_batches
     
     def _prepare_batch(self, batch):
@@ -138,20 +138,17 @@ class Trainer:
         inputs = batch['neural_features']
         seq_class_ids = batch['seq_class_ids']
         seq_lengths = batch['seq_lengths']
-        
         phenome_seq_lengths = torch.tensor(batch['seq_len'])
-        sentence_labels = batch['sentence_label']
         inputs = inputs.to(self.device)
         seq_class_ids = seq_class_ids.to(self.device)
         seq_lengths = seq_lengths.to(self.device)
         phenome_seq_lengths = phenome_seq_lengths.to(self.device)
-        
 
         return inputs, seq_class_ids, seq_lengths, phenome_seq_lengths
-
+    
     def _save_checkpoint(self, epoch, val_loss, per):
         """Save model checkpoint"""
-        self.logger.info(f"Saving checkpoint for epoch {epoch+1} with val_loss {val_loss:.4f}; PER: {per:.4f}")
+        self.logger.info(f"Saving checkpoint for epoch {epoch+1}. ::: val_loss {val_loss:.4f} PER: {per:.4f}")
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
