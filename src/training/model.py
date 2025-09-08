@@ -53,7 +53,7 @@ class ConformerBlock(nn.Module):
         x = self.layer_norm2(x)
         return x
 
-class BrainToTextConformer(nn.Module):
+class BrainToTextModel(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.input_dim = config.get('model', {}).get('input_dim', 512)
