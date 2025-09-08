@@ -22,7 +22,7 @@ if __name__ == "__main__":
         )
     if config.get('run')['mode'] == 'train':
         logger.info("*************Mode: Train*************")
-        from src.dataset.dataset import DatasetLoader
+        from dataset.dataset import DatasetLoader
         from src.training.trainer import Trainer
         from src.training.model import BrainToTextModel
         train_loader = DatasetLoader(config, logger).get_dataloader(kind='train')
