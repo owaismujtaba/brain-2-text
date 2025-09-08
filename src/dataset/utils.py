@@ -49,7 +49,7 @@ def get_all_files(parent_dir, extensions=None):
         List[str]: List of file paths.
     """
     all_files = []
-    pdb.set_trace()
+    
     for root, _, files in os.walk(parent_dir):
         for file in files:
             if extensions is None or file.lower().endswith(extensions):
