@@ -1,7 +1,9 @@
 import os
 import torch
+import h5py
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
+
+from src.dataset.utils import get_all_files
 
 
 class H5pyDataReader:
@@ -67,7 +69,7 @@ class H5pyDataset(Dataset):
         Expects config to be a dict-like object containing 'data_dir'.
         Instead of loading all data into memory, only indexes are stored and data is loaded at runtime.
         """
-        from .utils import get_all_files
+        
         self.logger = logger
         self.data_dir = config.get('dataset', {}).get('data_folder', None)
         if not self.data_dir:
@@ -89,7 +91,7 @@ class H5pyDataset(Dataset):
 
     def build_index(self):
         """Builds an index of all trials across the relevant files. Do not load all data into memory."""
-        import h5py
+        
         self.logger.info("Building index of all trials...")
         for file_path in self.relevant_filepaths:
             with h5py.File(file_path, 'r') as f:
@@ -105,7 +107,7 @@ class H5pyDataset(Dataset):
         if idx < 0 or idx >= self.length:
             raise IndexError("Index out of range.")
         file_path, trial_key = self.index_map[idx]
-        import h5py
+        
         with h5py.File(file_path, 'r') as f:
             g = f[trial_key]
             neural_features = torch.tensor(g['input_features'][:], dtype=torch.float32)

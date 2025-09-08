@@ -14,7 +14,7 @@ run:
   random_seed: 42
 
 dataset:
-  data_folder: 'home/owais/work/brain-2-text/data'
+  data_folder: 'home/owais/work/brain-2-text/data/raw'
 
 training:
   must_include_days: 5
