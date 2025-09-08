@@ -55,3 +55,4 @@ def get_all_files(parent_dir, extensions=None):
                 all_files.append(os.path.join(root, file))
                 
     return all_files
+    
