@@ -6,62 +6,6 @@ from torch.utils.data import Dataset, DataLoader
 from src.dataset.utils import get_all_files
 
 
-class H5pyDataReader:
-    def __init__(self, file_path, logger):
-        import h5py
-        self.logger = logger
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError(f"The file {file_path} does not exist.")
-        self.file = h5py.File(file_path, 'r')
-        self.data = self.read_all_trials()
-
-    def get_dataset(self):
-        return self.data
-
-    def read_all_trials(self):
-        self.logger.info("Reading all trials from the HDF5 file")
-        data = {
-            'neural_features': [],
-            'n_time_steps': [],
-            'seq_class_ids': [],
-            'seq_len': [],
-            'transcriptions': [],
-            'sentence_label': [],
-            'session': [],
-            'block_num': [],
-            'trial_num': [],
-        }
-
-        for key in self.file.keys():
-            g = self.file[key]
-
-            # Required fields
-            neural_features = g['input_features'][:]
-            n_time_steps = g.attrs.get('n_time_steps', neural_features.shape[0])
-
-            # Optional fields
-            seq_class_ids = g['seq_class_ids'][:] if 'seq_class_ids' in g else None
-            seq_len = g.attrs.get('seq_len', None)
-            transcription = g['transcription'][:] if 'transcription' in g else None
-            sentence_label = g.attrs.get('sentence_label', None)
-            session = g.attrs.get('session', None)
-            block_num = g.attrs.get('block_num', None)
-            trial_num = g.attrs.get('trial_num', None)
-
-            # Append to dictionary
-            data['neural_features'].append(torch.tensor(neural_features, dtype=torch.float32))
-            data['n_time_steps'].append(n_time_steps)
-            data['seq_class_ids'].append(torch.tensor(seq_class_ids, dtype=torch.long) if seq_class_ids is not None else None)
-            data['seq_len'].append(seq_len)
-            data['transcriptions'].append(transcription)
-            data['sentence_label'].append(sentence_label)
-            data['session'].append(session)
-            data['block_num'].append(block_num)
-            data['trial_num'].append(trial_num)
-
-        return data
-
-
 class H5pyDataset(Dataset):
     def __init__(self, config, logger, kind='train'):
         """

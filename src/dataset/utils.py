@@ -1,6 +1,9 @@
 import os
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from transformers import WhisperProcessor
+import numpy as np
+import pdb
 
 def collate_fn(batch):
     """
@@ -10,18 +13,27 @@ def collate_fn(batch):
     # Extract features and their lengths
     features = [item['neural_features'] for item in batch]  # list of [T_i, C]
     lengths = torch.tensor([f.shape[0] for f in features], dtype=torch.long)
+    sentence_labels = [item['sentence_label'] for item in batch]
+
+    processor = WhisperProcessor.from_pretrained("openai/whisper-small")
+    #sentence_labels = processor.tokenizer(sentence_labels, return_tensors="pt", padding=True).input_ids
+    sentence_labels, sentence_len = get_sentence_ids(processor, sentence_labels)
 
     # Pad sequences -> [B, T_max, C]
-    features_padded = pad_sequence(features, batch_first=True)  
-
+    features_padded = pad_sequence(features, batch_first=True, padding_value=0)  
+    sentrence_labels = pad_sequence(sentence_labels, batch_first=True, padding_value=0)
+    
     batch_out = {
         'neural_features': features_padded,
         'seq_lengths': lengths,
+        'sentence_label': sentrence_labels,
+        'sentence_len': sentence_len
     }
 
+    '''
     # Collate all other keys
     for key in batch[0].keys():
-        if key == 'neural_features':
+        if key == 'neural_features' or key == 'sentence_label' or key == 'seq_lengths':
             continue
         values = [item[key] for item in batch]
         if isinstance(values[0], torch.Tensor):
@@ -32,6 +44,7 @@ def collate_fn(batch):
                 batch_out[key] = values
         else:
             batch_out[key] = values
+    '''
 
     return batch_out
 
@@ -55,3 +68,14 @@ def get_all_files(parent_dir, extensions=None):
                 all_files.append(os.path.join(root, file))
                 
     return all_files
+
+def get_sentence_ids(processor, sentences):
+    sentence_labels = []
+    sentence_len = []
+    for sentence in sentences:
+        labels = processor.tokenizer(sentence, return_tensors="pt").input_ids
+        labels = labels.squeeze()
+        sentence_len.append(labels.size(0))
+        sentence_labels.append(labels)
+
+    return sentence_labels, sentence_len

@@ -1,8 +1,9 @@
 import os
+import numpy as np
 import torch
 from tqdm import tqdm
 import torch.nn as nn
-
+from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from src.evaluation.eval import compute_phenome_error
 
 import pdb
@@ -18,6 +19,8 @@ class Trainer:
         self.num_epochs = config.get('training', {}).get('num_epochs', 100)
         self.eval_interval = config.get('training', {}).get('eval_interval', 10)
         self.best_per = float('inf')
+        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
+        self.wisper_model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small").to(self.device)
 
     def _device_setup(self):
         """Setup device and move model to device"""
@@ -70,18 +73,16 @@ class Trainer:
             self.optimizer.zero_grad()
            
             # Get batch data
-            inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
-
-            
-            
+            inputs, seq_lengths, sentence_labels, sentence_len = self._prepare_batch(batch)
+            pdb.set_trace()
             # Forward pass
             logits = self.model(inputs)
             # Compute loss
             loss = self.criterion(
                 log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
-                targets = seq_class_ids,
+                targets = sentence_labels,
                 input_lengths = seq_lengths,
-                target_lengths = phenome_seq_lengths
+                target_lengths = sentence_len
             )           
             
             # Backward pass
@@ -112,22 +113,22 @@ class Trainer:
             pbar = tqdm(val_loader, desc='Training')
             for batch in val_loader:
                 # Get batch data
-                inputs, seq_class_ids, seq_lengths, phenome_seq_lengths, sentence_labels = self._prepare_batch(batch)
-
+                inputs, seq_lengths, sentence_labels, sentence_len = self._prepare_batch(batch)
+                pdb.set_trace()
                 # Forward pass
                 logits = self.model(inputs)
                 
                 # Compute loss
                 loss = self.criterion(
                     log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
-                    targets = seq_class_ids,
+                    targets = sentence_labels,
                     input_lengths = seq_lengths,
-                    target_lengths = phenome_seq_lengths
+                    target_lengths = sentence_len
                 )
                 
                 
                 total_loss += loss.item()
-                per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
+                #per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
             pbar.set_postfix({'loss': f'{loss.item():.4f}', 'PER': f'{per:.4f}'})
         return total_loss / num_batches, total_per / num_batches
@@ -136,18 +137,15 @@ class Trainer:
         """Prepare batch data for training/validation"""
 
         inputs = batch['neural_features']
-        seq_class_ids = batch['seq_class_ids']
         seq_lengths = batch['seq_lengths']
-        
-        phenome_seq_lengths = torch.tensor(batch['seq_len'])
         sentence_labels = batch['sentence_label']
-        inputs = inputs.to(self.device)
-        seq_class_ids = seq_class_ids.to(self.device)
-        seq_lengths = seq_lengths.to(self.device)
-        phenome_seq_lengths = phenome_seq_lengths.to(self.device)
-        
+        sentence_len = batch['sentence_len']
 
-        return inputs, seq_class_ids, seq_lengths, phenome_seq_lengths
+        inputs = inputs.to(self.device)
+        seq_lengths = seq_lengths.to(self.device)
+        
+        sentence_labels = torch.tensor(sentence_labels).to(self.device)
+        return inputs, seq_lengths, sentence_labels, sentence_len
 
     def _save_checkpoint(self, epoch, val_loss, per):
         """Save model checkpoint"""
@@ -170,3 +168,14 @@ class Trainer:
         
         best_model_path = os.path.join(os.path.dirname(checkpoint_path), 'best_model.pth')
         torch.save(checkpoint, best_model_path)
+
+    def _get_wisper_sentence_labels(self, sentence_labels):
+        """Convert sentence labels to Whisper-compatible input IDs"""
+        sentence_ids = []
+        with torch.no_grad():
+            for sentence in sentence_labels:
+                input_ids = self.processor.tokenizer(sentence, return_tensors="pt", padding=True).input_ids
+                sentence_ids.append(input_ids)
+        return sentence_ids
+
+        

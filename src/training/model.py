@@ -1,24 +1,28 @@
 import torch
-
 import torch.nn as nn
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
 class BrainToTextModel(nn.Module):
     def __init__(self, config):
         super().__init__()
-        # Get model parameters from config
-        self.input_dim = config.get('model', {}).get('input_dim', 512)
-        self.hidden_dim = config.get('model', {}).get('hidden_dim', 512)
-        self.num_layers = config.get('model', {}).get('num_layers', 2)
-        self.num_classes = config.get('model', {}).get('num_classes', 41)  # Vocabulary size
-        self.dropout = config.get('model', {}).get('dropout', 0.1)
+        self.config = config
+        self._setup_config()
 
-        # Layers
+        # Load Whisper (frozen)
+        self.whisper = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
+        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
+        
+        for param in self.whisper.parameters():
+            param.requires_grad = False  # freeze Whisper
+
+        # EEG feature encoder
         self.feature_encoder = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(self.dropout)
         )
 
+        # LSTM for temporal processing
         self.lstm = nn.LSTM(
             input_size=self.hidden_dim,
             hidden_size=self.hidden_dim,
@@ -28,7 +32,13 @@ class BrainToTextModel(nn.Module):
             bidirectional=True
         )
 
-        # Output layer (bidirectional LSTM output -> num_classes)
+        self.whisper_conv1_out_channels = self.whisper.model.encoder.conv1.out_channels
+
+        # Project LSTM output to Whisper encoder dimension
+        self.project_to_whisper = nn.Linear(self.hidden_dim * 2,
+                                            self.whisper_conv1_out_channels)
+
+        # Optional classifier (EEG → fixed classes)
         self.classifier = nn.Sequential(
             nn.Linear(self.hidden_dim * 2, self.hidden_dim),
             nn.ReLU(),
@@ -36,43 +46,42 @@ class BrainToTextModel(nn.Module):
             nn.Linear(self.hidden_dim, self.num_classes)
         )
 
-    def forward(self, x, lengths=None):
-        # x shape: (batch_size, sequence_length, input_dim)
-        
+    def _setup_config(self):
+        self.input_dim = self.config.get('model', {}).get('input_dim', 512)
+        self.hidden_dim = self.config.get('model', {}).get('hidden_dim', 512)
+        self.num_layers = self.config.get('model', {}).get('num_layers', 2)
+        self.dropout = self.config.get('model', {}).get('dropout', 0.1)
+        self.num_classes = self.config.get('model', {}).get('num_classes', 10)
+
+    def forward(self, x):
+        """
+        x: EEG input -> (batch_size, seq_len, input_dim)
+        returns: classifier logits
+        """
         # Encode features
         x = self.feature_encoder(x)
 
-        # Pack sequence for LSTM if lengths are provided
-        if lengths is not None:
-            x = nn.utils.rnn.pack_padded_sequence(
-                x, lengths.cpu(), batch_first=True, enforce_sorted=False
-            )
-
-        # Process through LSTM
+        # LSTM
         x, _ = self.lstm(x)
 
-        # Unpack sequence if it was packed
-        if lengths is not None:
-            x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+        # Project to Whisper encoder dimension (frozen)
+        whisper_features = self.project_to_whisper(x)
 
-        # Apply classifier
+        # Optional: classifier output
         logits = self.classifier(x)
-        
-        return logits
+
+        return logits, whisper_features
 
     def configure_optimizers(self, config):
-        """Configure optimizer and learning rate scheduler"""
         optimizer = torch.optim.Adam(
             self.parameters(),
             lr=config.get('training', {}).get('learning_rate', 1e-3),
             weight_decay=config.get('training', {}).get('weight_decay', 1e-5)
         )
-        
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode='min',
             factor=0.5,
             patience=5,
         )
-        
         return optimizer, scheduler
