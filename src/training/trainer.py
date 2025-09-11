@@ -11,16 +11,22 @@ class Trainer:
     def __init__(self, model, config, logger=None):
         self.model = model
         self.config = config
+        self.best_per = float('inf')
+        self.best_loss = float('inf')
+    
         self.logger = logger
         self.logger.info("Initializing Trainer")
         self._device_setup()
+        self._setup_config_params()
+
+        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
         self.optimizer, self.scheduler = model.configure_optimizers(config)
         self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
-        self.num_epochs = config.get('training', {}).get('num_epochs', 100)
-        self.eval_interval = config.get('training', {}).get('eval_interval', 10)
-        self.best_per = float('inf')
-        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
-        self.wisper_model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small").to(self.device)
+
+    def _setup_config_params(self):
+        self.batch_size = self.config.get('training')['batch_size']
+        self.num_epochs = self.config.get('training')['epochs']
+        self.checkpoint_dir = self.config.get('training')['checkpoints_dir']
 
     def _device_setup(self):
         """Setup device and move model to device"""
@@ -40,6 +46,7 @@ class Trainer:
         
     def train(self, train_loader, val_loader):
         """Main training loop"""
+        
         self.logger.info("Starting training process")
         for epoch in range(self.num_epochs):
             # Training phase
@@ -71,23 +78,19 @@ class Trainer:
         pbar = tqdm(train_loader, desc='Training')
         for batch in pbar:
             self.optimizer.zero_grad()
-           
+                     
             # Get batch data
-            inputs, seq_lengths, sentence_labels, sentence_len = self._prepare_batch(batch)
-            pdb.set_trace()
-            # Forward pass
-            logits = self.model(inputs)
-            # Compute loss
-            loss = self.criterion(
-                log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
-                targets = sentence_labels,
-                input_lengths = seq_lengths,
-                target_lengths = sentence_len
-            )           
+            inputs, seq_lengths, sentence_labels = self._prepare_batch(batch)
             
+            
+            
+            outputs = self.model(inputs, sentence_labels)
+
+            loss = outputs.loss
             # Backward pass
             loss.backward()
             
+            ids = self.model.generate(inputs)
             # Clip gradients
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             
@@ -113,20 +116,11 @@ class Trainer:
             pbar = tqdm(val_loader, desc='Training')
             for batch in val_loader:
                 # Get batch data
-                inputs, seq_lengths, sentence_labels, sentence_len = self._prepare_batch(batch)
-                pdb.set_trace()
-                # Forward pass
-                logits = self.model(inputs)
+                inputs, seq_lengths, sentence_labels = self._prepare_batch(batch)
+               
+                outputs = self.model(inputs, sentence_labels)
                 
-                # Compute loss
-                loss = self.criterion(
-                    log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
-                    targets = sentence_labels,
-                    input_lengths = seq_lengths,
-                    target_lengths = sentence_len
-                )
-                
-                
+                loss = outputs.loss
                 total_loss += loss.item()
                 #per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
@@ -135,17 +129,24 @@ class Trainer:
     
     def _prepare_batch(self, batch):
         """Prepare batch data for training/validation"""
-
+        pdb.set_trace()
         inputs = batch['neural_features']
         seq_lengths = batch['seq_lengths']
         sentence_labels = batch['sentence_label']
-        sentence_len = batch['sentence_len']
+        #sentence_len = batch['sentence_len']
 
         inputs = inputs.to(self.device)
         seq_lengths = seq_lengths.to(self.device)
+            
+        sentence_labels = self.processor(
+            text=sentence_labels,
+            return_tensors="pt",
+            padding=True,
+            truncation=True
+        ).input_ids
+        sentence_labels = sentence_labels.to(self.device)
         
-        sentence_labels = torch.tensor(sentence_labels).to(self.device)
-        return inputs, seq_lengths, sentence_labels, sentence_len
+        return inputs, seq_lengths, sentence_labels
 
     def _save_checkpoint(self, epoch, val_loss, per):
         """Save model checkpoint"""

@@ -20,9 +20,8 @@ training:
   must_include_days: 5
   epochs: 100
   batch_size: 8
-  learning_rate: 0.001
-  output_dir: 'outputs/'
-  eval_interval: 1  # Interval (in epochs) to perform evaluation
+  learning_rate: 0.0001
+  weight_decay: 0.00001
   checkpoints_dir: 'checkpoints/'
 
 model:

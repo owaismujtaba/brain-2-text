@@ -15,22 +15,17 @@ def collate_fn(batch):
     lengths = torch.tensor([f.shape[0] for f in features], dtype=torch.long)
     sentence_labels = [item['sentence_label'] for item in batch]
 
-    processor = WhisperProcessor.from_pretrained("openai/whisper-small")
-    #sentence_labels = processor.tokenizer(sentence_labels, return_tensors="pt", padding=True).input_ids
-    sentence_labels, sentence_len = get_sentence_ids(processor, sentence_labels)
-
-    # Pad sequences -> [B, T_max, C]
+    
+    
     features_padded = pad_sequence(features, batch_first=True, padding_value=0)  
-    sentrence_labels = pad_sequence(sentence_labels, batch_first=True, padding_value=0)
+   
     
     batch_out = {
         'neural_features': features_padded,
         'seq_lengths': lengths,
-        'sentence_label': sentrence_labels,
-        'sentence_len': sentence_len
+        'sentence_label': sentence_labels,
     }
 
-    '''
     # Collate all other keys
     for key in batch[0].keys():
         if key == 'neural_features' or key == 'sentence_label' or key == 'seq_lengths':
@@ -44,12 +39,11 @@ def collate_fn(batch):
                 batch_out[key] = values
         else:
             batch_out[key] = values
-    '''
 
     return batch_out
 
 
-def get_all_files(parent_dir, extensions=None):
+def get_all_files(parent_dir, kind, extensions=None,):
     """
     Recursively loads all files in the parent directory and its subdirectories.
     If extensions is provided, only files with those extensions are returned.
@@ -61,15 +55,17 @@ def get_all_files(parent_dir, extensions=None):
     Returns:
         List[str]: List of file paths.
     """
-    all_files = []
+    filepaths = []
     for root, _, files in os.walk(parent_dir):
         for file in files:
             if extensions is None or file.lower().endswith(extensions):
-                all_files.append(os.path.join(root, file))
+                if kind in file:
+                    filepaths.append(os.path.join(root, file))
                 
-    return all_files
+    return filepaths
 
 def get_sentence_ids(processor, sentences):
+    pdb.set_trace()
     sentence_labels = []
     sentence_len = []
     for sentence in sentences:

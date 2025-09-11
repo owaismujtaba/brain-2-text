@@ -4,6 +4,8 @@ import h5py
 from torch.utils.data import Dataset, DataLoader
 
 from src.dataset.utils import get_all_files
+from src.dataset.utils import collate_fn
+
 
 
 class H5pyDataset(Dataset):
@@ -15,34 +17,34 @@ class H5pyDataset(Dataset):
         """
         
         self.logger = logger
-        self.data_dir = config.get('dataset', {}).get('data_folder', None)
-        if not self.data_dir:
-            raise ValueError("Config must contain 'data_dir' key.")
-
-        # Get all HDF5 files
-        self.all_filepaths = get_all_files(self.data_dir, extensions=('.hdf5',))
-        self.relevant_filepaths = self.filter_filepaths(kind)
+        self.config = config
         self.index_map = []  # List of (file_path, trial_key) tuples
 
-        self.build_index()  # Build index of all trials
+        self._setup_config_parms()
+        self._setup_filepaths(kind=kind)
+        self.build_index()
 
-    def filter_filepaths(self, keyword):
-        self.logger.info(f"Filtering files in {self.data_dir} with keyword '{keyword}'")
-        filtered_files = [f for f in self.all_filepaths if keyword in os.path.basename(f)]
-        if not filtered_files:
-            self.logger.warning(f"No files found with keyword '{keyword}' in directory '{self.data_dir}'")
-        return filtered_files
+
+    def _setup_config_parms(self):
+        self.data_dir = self.config.get('dataset', {}).get('data_folder', None)
+        if not os.path.exists(self.data_dir):
+            raise ValueError(f"Directory {self.data_dir} does not exist")
+        
+    def _setup_filepaths(self, kind):
+        self.filepaths = get_all_files(self.data_dir, extensions=('.hdf5',), kind=kind)
+        if len(self.filepaths)<1:
+            raise ValueError(f"No files of {kind} in the directoy: {self.data_dir}")
 
     def build_index(self):
         """Builds an index of all trials across the relevant files. Do not load all data into memory."""
         
         self.logger.info("Building index of all trials...")
-        for file_path in self.relevant_filepaths:
+        for file_path in self.filepaths:
             with h5py.File(file_path, 'r') as f:
                 for key in f.keys():
                     self.index_map.append((file_path, key))
         self.length = len(self.index_map)
-        self.logger.info(f"Indexed {self.length} trials from {len(self.relevant_filepaths)} files.")
+        self.logger.info(f"Indexed {self.length} trials from {len(self.filepaths)} files.")
 
     def __len__(self):
         return self.length
@@ -77,16 +79,18 @@ class H5pyDataset(Dataset):
             }
         return item
 
-
 class DatasetLoader:
     def __init__(self, config, logger):
         self.logger = logger
         self.config = config
+        self._setup_config_parms()
+
+    def _setup_config_parms(self):
+        self.batch_size = self.config.get('training', {}).get('batch_size', 16)
 
     def get_dataloader(self, kind='train'):
-        from src.dataset.utils import collate_fn
         dataset = H5pyDataset(self.config, self.logger, kind)
-        batch_size = self.config.get('training', {}).get('batch_size', 16)
-        dataloader = DataLoader(dataset, batch_size, shuffle=True, collate_fn=collate_fn)
-        self.logger.info(f"Created DataLoader for {kind} with batch size {batch_size}")
+        dataloader = DataLoader(dataset, self.batch_size, shuffle=True, collate_fn=collate_fn)
+        self.logger.info(f"Created DataLoader for {kind} with batch size {self.batch_size}")
+        
         return dataloader

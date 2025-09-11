@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from transformers.modeling_outputs import BaseModelOutput
 
+import pdb
 class BrainToTextModel(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -9,9 +11,10 @@ class BrainToTextModel(nn.Module):
         self._setup_config()
 
         # Load Whisper (frozen)
-        self.whisper = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
-        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small")
-        
+        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
+        self.whisper =WhisperForConditionalGeneration.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
+
+
         for param in self.whisper.parameters():
             param.requires_grad = False  # freeze Whisper
 
@@ -22,7 +25,7 @@ class BrainToTextModel(nn.Module):
             nn.Dropout(self.dropout)
         )
 
-        # LSTM for temporal processing
+        # LSTM for temporal modeling
         self.lstm = nn.LSTM(
             input_size=self.hidden_dim,
             hidden_size=self.hidden_dim,
@@ -32,18 +35,11 @@ class BrainToTextModel(nn.Module):
             bidirectional=True
         )
 
-        self.whisper_conv1_out_channels = self.whisper.model.encoder.conv1.out_channels
-
-        # Project LSTM output to Whisper encoder dimension
-        self.project_to_whisper = nn.Linear(self.hidden_dim * 2,
-                                            self.whisper_conv1_out_channels)
-
-        # Optional classifier (EEG → fixed classes)
-        self.classifier = nn.Sequential(
-            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(self.dropout),
-            nn.Linear(self.hidden_dim, self.num_classes)
+        # Project EEG → Whisper encoder dimension
+        self.whisper_hidden_size = self.whisper.model.encoder.conv1.out_channels
+        self.project_to_whisper = nn.Linear(
+            self.hidden_dim * 2,
+            self.whisper_hidden_size
         )
 
     def _setup_config(self):
@@ -51,26 +47,46 @@ class BrainToTextModel(nn.Module):
         self.hidden_dim = self.config.get('model', {}).get('hidden_dim', 512)
         self.num_layers = self.config.get('model', {}).get('num_layers', 2)
         self.dropout = self.config.get('model', {}).get('dropout', 0.1)
-        self.num_classes = self.config.get('model', {}).get('num_classes', 10)
 
-    def forward(self, x):
+    def forward(self, x, labels=None):
         """
         x: EEG input -> (batch_size, seq_len, input_dim)
-        returns: classifier logits
+        labels: tokenized text (for supervised training)
+        returns: Whisper outputs (logits + loss if labels are provided)
         """
-        # Encode features
+        # EEG → encoder
         x = self.feature_encoder(x)
-
-        # LSTM
         x, _ = self.lstm(x)
 
-        # Project to Whisper encoder dimension (frozen)
-        whisper_features = self.project_to_whisper(x)
+        # EEG → Whisper latent space
+        encoder_hidden_states = self.project_to_whisper(x)
 
-        # Optional: classifier output
-        logits = self.classifier(x)
+        # Wrap in correct HF output format
+        encoder_outputs = BaseModelOutput(last_hidden_state=encoder_hidden_states)
 
-        return logits, whisper_features
+        # Frozen Whisper decoder
+        outputs = self.whisper(
+            encoder_outputs=encoder_outputs,
+            labels=labels  # required during training
+        )
+        return outputs
+
+    def generate(self, x, **gen_kwargs):
+        """
+        EEG → text (generation with frozen Whisper)
+        """
+        x = self.feature_encoder(x)
+        x, _ = self.lstm(x)
+        pdb.set_trace()
+        encoder_hidden_states = self.project_to_whisper(x)
+
+        encoder_outputs = BaseModelOutput(last_hidden_state=encoder_hidden_states)
+
+        generated_ids = self.whisper.generate(
+            encoder_outputs=encoder_outputs,
+            **gen_kwargs
+        )
+        return generated_ids
 
     def configure_optimizers(self, config):
         optimizer = torch.optim.Adam(
