@@ -34,7 +34,6 @@ class BrainToTextModel(nn.Module):
         )
         out_dim = self.hidden_dim * (2 if bidirectional else 1)
         self.proj = nn.Linear(out_dim, mel_bins)
-        # Normalización por canal (mel) para aproximar la distribución esperada por Whisper
         self.norm = nn.LayerNorm(mel_bins)
 
         
@@ -58,34 +57,3 @@ class BrainToTextModel(nn.Module):
         mel = mel.transpose(1, 2).contiguous()       # (B, 80, mel_frames)
         
         return mel
-
-    def generate(self, x, **gen_kwargs):
-        """
-        EEG → text (generation with frozen Whisper)
-        """
-        x = self.feature_encoder(x)
-        x, _ = self.lstm(x)
-        pdb.set_trace()
-        encoder_hidden_states = self.project_to_whisper(x)
-
-        encoder_outputs = BaseModelOutput(last_hidden_state=encoder_hidden_states)
-
-        generated_ids = self.whisper.generate(
-            encoder_outputs=encoder_outputs,
-            **gen_kwargs
-        )
-        return generated_ids
-
-    def configure_optimizers(self, config):
-        optimizer = torch.optim.Adam(
-            self.parameters(),
-            lr=config.get('training', {}).get('learning_rate', 1e-3),
-            weight_decay=config.get('training', {}).get('weight_decay', 1e-5)
-        )
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=0.5,
-            patience=5,
-        )
-        return optimizer, scheduler
