@@ -6,6 +6,8 @@ import torch.nn as nn
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from src.evaluation.eval import compute_phenome_error
 
+from src.dataset.utils import pad_to_mel_length
+
 import pdb
 class Trainer:
     def __init__(self, model, config, logger=None):
@@ -13,144 +15,115 @@ class Trainer:
         self.config = config
         self.best_per = float('inf')
         self.best_loss = float('inf')
-    
         self.logger = logger
         self.logger.info("Initializing Trainer")
-        self._device_setup()
+        
+        
         self._setup_config_params()
 
-        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
+        # Models
+        self.processor = WhisperProcessor.from_pretrained('openai/whisper-small', language='en', task="transcribe")
+        self.whisper = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
+        self._device_setup()
+        self.whisper.eval()
+        for param in self.whisper.parameters():
+            param.requires_grad = False
+
+        # Optimizer & Scheduler
         self.optimizer, self.scheduler = model.configure_optimizers(config)
-        self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
 
+        # Loss & AMP
+        self.criterion = nn.CrossEntropyLoss(ignore_index=self.processor.tokenizer.pad_token_id)
+        self.scaler = torch.cuda.amp.GradScaler()
+    
     def _setup_config_params(self):
-        self.batch_size = self.config.get('training')['batch_size']
-        self.num_epochs = self.config.get('training')['epochs']
-        self.checkpoint_dir = self.config.get('training')['checkpoints_dir']
-
+        training_cfg = self.config.get('training', {})
+        self.batch_size = training_cfg.get('batch_size', 32)
+        self.num_epochs = training_cfg.get('epochs', 10)
+        self.checkpoint_dir = training_cfg.get('checkpoints_dir', './checkpoints')
+        self.mel_frames = training_cfg.get('mel_frames', 3000)
+    
     def _device_setup(self):
-        """Setup device and move model to device"""
         self.logger.info("Setting up device")
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-            if torch.cuda.device_count() > 1:
-                self.logger.info(f"Using {torch.cuda.device_count()} GPUs")
-                self.model = nn.DataParallel(self.model)
-        else:
-            self.device = torch.device('cpu')
-            self.logger.info(f"Using device: {self.device}")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if torch.cuda.device_count() > 1:
+            self.logger.info(f"Using {torch.cuda.device_count()} GPUs")
+            self.model = nn.DataParallel(self.model)
         self.model.to(self.device)
+        self.whisper.to(self.device)
+        self.logger.info(f"Using device: {self.device}")
 
-        
-        
-        
-    def train(self, train_loader, val_loader):
-        """Main training loop"""
-        
+    def train(self, train_loader, val_loader=None):
         self.logger.info("Starting training process")
+        
         for epoch in range(self.num_epochs):
-            # Training phase
             self.model.train()
-            train_loss = self._train_epoch(train_loader)
-            
-            # Validation phase
-            if (epoch + 1) % self.eval_interval == 0:
-                self.model.eval()
-                self.logger.info("Validating model...")
-                 # Compute validation loss
-                val_loss, per = self._validate(val_loader)
-                 # Update learning rate scheduler
-                self.scheduler.step(val_loss)
-                
-                # Save best model
-                if per < self.best_per:
-                    self.best_per = per 
-                    self._save_checkpoint(epoch, val_loss, per)
-                
-                self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
-                self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
-    
-    def _train_epoch(self, train_loader):
-        """Train for one epoch"""
-        epoch_loss = 0
-        num_batches = len(train_loader)
-        
-        pbar = tqdm(train_loader, desc='Training')
-        for batch in pbar:
-            self.optimizer.zero_grad()
-                     
-            # Get batch data
-            inputs, seq_lengths, sentence_labels = self._prepare_batch(batch)
-            
-            
-            
-            outputs = self.model(inputs, sentence_labels)
+            avg_train_loss = self._train_epoch(train_loader)
+            self.logger.info(f"Epoch {epoch+1}/{self.num_epochs} - Avg Train Loss: {avg_train_loss:.4f}")
 
+            if val_loader is not None:
+                avg_val_loss = self._validate(val_loader)
+                self.logger.info(f"Epoch {epoch+1} - Validation Loss: {avg_val_loss:.4f}")
+                # Save checkpoint if improved
+                if avg_val_loss < self.best_loss:
+                    self.best_loss = avg_val_loss
+                    self._save_checkpoint(epoch, avg_val_loss, per=0)
+
+    def _train_epoch(self, dataloader):
+        epoch_loss = 0.0
+        progress = tqdm(dataloader, desc="Training", leave=False)
+        for batch in progress:
+            inputs, _, tok_labels, _ = self._prepare_batch(batch)
+            loss = self._train_step(inputs, tok_labels)
+            epoch_loss += loss
+            progress.set_postfix({"batch_loss": loss})
+        return epoch_loss / len(dataloader)
+
+    def _train_step(self, inputs, tok_labels):
+        self.model.train()
+        self.whisper.eval()
+        
+        with torch.cuda.amp.autocast(enabled=(self.device.type=="cuda")):
+            input_features = self.model(inputs)
+            input_features = pad_to_mel_length(input_features, self.mel_frames)
+            outputs = self.whisper(input_features=input_features, labels=tok_labels)
             loss = outputs.loss
-            # Backward pass
-            loss.backward()
-            
-            ids = self.model.generate(inputs)
-            # Clip gradients
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            
-            # Update weights
-            self.optimizer.step()
-            
-            current_loss = loss.item()
-            epoch_loss += current_loss
-            
-            # Update progress bar with current loss
-            pbar.set_postfix({'loss': f'{current_loss:.4f}'})
-            
-        return epoch_loss / num_batches
-    
-    def _validate(self, val_loader):
-        """Validate the model"""
-        total_loss = 0
-        num_batches = len(val_loader)
         
-        with torch.no_grad():
-            total_per = 0
-            per = 0
-            pbar = tqdm(val_loader, desc='Training')
-            for batch in val_loader:
-                # Get batch data
-                inputs, seq_lengths, sentence_labels = self._prepare_batch(batch)
-               
-                outputs = self.model(inputs, sentence_labels)
-                
-                loss = outputs.loss
-                total_loss += loss.item()
-                #per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
-                total_per += per
-            pbar.set_postfix({'loss': f'{loss.item():.4f}', 'PER': f'{per:.4f}'})
-        return total_loss / num_batches, total_per / num_batches
-    
-    def _prepare_batch(self, batch):
-        """Prepare batch data for training/validation"""
-        pdb.set_trace()
-        inputs = batch['neural_features']
-        seq_lengths = batch['seq_lengths']
-        sentence_labels = batch['sentence_label']
-        #sentence_len = batch['sentence_len']
+        self.optimizer.zero_grad(set_to_none=True)
+        self.scaler.scale(loss).backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        
+        return loss.item()
 
-        inputs = inputs.to(self.device)
-        seq_lengths = seq_lengths.to(self.device)
-            
-        sentence_labels = self.processor(
-            text=sentence_labels,
-            return_tensors="pt",
-            padding=True,
-            truncation=True
-        ).input_ids
-        sentence_labels = sentence_labels.to(self.device)
-        
-        return inputs, seq_lengths, sentence_labels
+    def _prepare_batch(self, batch):
+        inputs = batch['neural_features'].to(self.device)
+        seq_lengths = batch['seq_lengths'].to(self.device)
+        tok_labels = batch['tok_labels'].to(self.device)
+        sentence_labels = batch['sentence_label']  # not used for training
+        return inputs, seq_lengths, tok_labels, sentence_labels
+
+    def _validate(self, val_loader):
+        self.model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            progress = tqdm(val_loader, desc="Validating", leave=False)
+            for batch in progress:
+                inputs, seq_lengths, tok_labels, _ = self._prepare_batch(batch)
+                with torch.cuda.amp.autocast(enabled=(self.device.type=="cuda")):
+                    input_features = self.model(inputs)
+                    input_features = pad_to_mel_length(input_features, self.mel_frames)
+                    outputs = self.whisper(input_features=input_features, labels=tok_labels)
+                    loss = outputs.loss.item()
+                    val_loss += loss
+                    progress.set_postfix({"batch_loss": loss})
+        return val_loss / len(val_loader)
 
     def _save_checkpoint(self, epoch, val_loss, per):
-        """Save model checkpoint"""
-        self.logger.info(f"Saving checkpoint for epoch {epoch+1} with val_loss {val_loss:.4f}; PER: {per:.4f}")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        filename = f'checkpoint_epoch-{epoch+1:03d}_loss-{val_loss:.4f}_per-{per}.pth'
+        path = os.path.join(self.checkpoint_dir, filename)
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -159,24 +132,6 @@ class Trainer:
             'val_loss': val_loss,
             'config': self.config
         }
-        checkpoint_path = self.config.get('training', {}).get('checkpoints_dir')
-        os.makedirs(checkpoint_path, exist_ok=True)
-        
-        filename = f'checkpoint_epoch-{epoch+1:03d}_loss-{val_loss:.4f}_per-{per}.pth'
-        checkpoint_path = os.path.join(checkpoint_path, filename)
-        
-        torch.save(checkpoint, checkpoint_path)
-        
-        best_model_path = os.path.join(os.path.dirname(checkpoint_path), 'best_model.pth')
-        torch.save(checkpoint, best_model_path)
-
-    def _get_wisper_sentence_labels(self, sentence_labels):
-        """Convert sentence labels to Whisper-compatible input IDs"""
-        sentence_ids = []
-        with torch.no_grad():
-            for sentence in sentence_labels:
-                input_ids = self.processor.tokenizer(sentence, return_tensors="pt", padding=True).input_ids
-                sentence_ids.append(input_ids)
-        return sentence_ids
-
-        
+        torch.save(checkpoint, path)
+        torch.save(checkpoint, os.path.join(self.checkpoint_dir, 'best_model.pth'))
+        self.logger.info(f"Saved checkpoint: {path}")

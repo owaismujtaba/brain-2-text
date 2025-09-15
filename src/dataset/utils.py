@@ -5,6 +5,11 @@ from transformers import WhisperProcessor
 import numpy as np
 import pdb
 
+MODEL_NAME = "openai/whisper-base"  
+LANG = "en"
+processor = WhisperProcessor.from_pretrained(MODEL_NAME, language=LANG, task="transcribe")
+
+
 def collate_fn(batch):
     """
     Collates a list of dicts from H5pyDataset into a batch.
@@ -15,32 +20,48 @@ def collate_fn(batch):
     lengths = torch.tensor([f.shape[0] for f in features], dtype=torch.long)
     sentence_labels = [item['sentence_label'] for item in batch]
 
-    
-    
-    features_padded = pad_sequence(features, batch_first=True, padding_value=0)  
-   
-    
+    # Tokenize sentence labels as Whisper decoder targets
+    labels = processor.tokenizer(
+        text_target=sentence_labels,   # <-- use text_target explicitly
+        add_special_tokens=True,       # adds <|startoftranscript|>, language, task, etc.
+        padding=True,
+        truncation=True,
+        return_tensors="pt"
+    ).input_ids
+
+    # Pad neural features
+    features_padded = pad_sequence(features, batch_first=True, padding_value=0)
+
     batch_out = {
         'neural_features': features_padded,
         'seq_lengths': lengths,
-        'sentence_label': sentence_labels,
+        'tok_labels': labels,             # <-- return labels directly
+        'sentence_label': sentence_labels,  # keep raw text if you still need it
     }
 
-    # Collate all other keys
+    # Collate other keys if present
     for key in batch[0].keys():
-        if key == 'neural_features' or key == 'sentence_label' or key == 'seq_lengths':
+        if key in ['neural_features', 'sentence_label', 'seq_lengths']:
             continue
         values = [item[key] for item in batch]
         if isinstance(values[0], torch.Tensor):
             try:
                 batch_out[key] = torch.stack(values)
             except RuntimeError:
-                # e.g., if variable-length labels like seq_class_ids
-                batch_out[key] = values
+                batch_out[key] = values  # variable-length
         else:
             batch_out[key] = values
 
     return batch_out
+
+def pad_to_mel_length(mel, mel_frames=3000):
+    B, n_mels, T = mel.shape
+    if T < mel_frames:
+        pad_amount = mel_frames - T
+        mel = torch.nn.functional.pad(mel, (0, pad_amount))  # pad on last dim
+    else:
+        mel = mel[:, :, :mel_frames]  # truncate if too long
+    return mel
 
 
 def get_all_files(parent_dir, kind, extensions=None,):

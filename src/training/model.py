@@ -4,19 +4,19 @@ from transformers import WhisperForConditionalGeneration, WhisperProcessor
 from transformers.modeling_outputs import BaseModelOutput
 
 import pdb
+
+
+
+
+
 class BrainToTextModel(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
         self._setup_config()
 
-        # Load Whisper (frozen)
-        self.processor = WhisperProcessor.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
-        self.whisper =WhisperForConditionalGeneration.from_pretrained("openai/whisper-small", cache_dir="./hf_cache")
-
-
-        for param in self.whisper.parameters():
-            param.requires_grad = False  # freeze Whisper
+        bidirectional = True
+        mel_bins = 80
 
         # EEG feature encoder
         self.feature_encoder = nn.Sequential(
@@ -25,23 +25,19 @@ class BrainToTextModel(nn.Module):
             nn.Dropout(self.dropout)
         )
 
-        # LSTM for temporal modeling
-        self.lstm = nn.LSTM(
-            input_size=self.hidden_dim,
+        self.rnn = nn.GRU(
+            input_size=self.input_dim,
             hidden_size=self.hidden_dim,
             num_layers=self.num_layers,
             batch_first=True,
-            dropout=self.dropout if self.num_layers > 1 else 0,
-            bidirectional=True
+            bidirectional=bidirectional
         )
+        out_dim = self.hidden_dim * (2 if bidirectional else 1)
+        self.proj = nn.Linear(out_dim, mel_bins)
+        # Normalización por canal (mel) para aproximar la distribución esperada por Whisper
+        self.norm = nn.LayerNorm(mel_bins)
 
-        # Project EEG → Whisper encoder dimension
-        self.whisper_hidden_size = self.whisper.model.encoder.conv1.out_channels
-        self.project_to_whisper = nn.Linear(
-            self.hidden_dim * 2,
-            self.whisper_hidden_size
-        )
-
+        
     def _setup_config(self):
         self.input_dim = self.config.get('model', {}).get('input_dim', 512)
         self.hidden_dim = self.config.get('model', {}).get('hidden_dim', 512)
@@ -56,20 +52,12 @@ class BrainToTextModel(nn.Module):
         """
         # EEG → encoder
         x = self.feature_encoder(x)
-        x, _ = self.lstm(x)
-
-        # EEG → Whisper latent space
-        encoder_hidden_states = self.project_to_whisper(x)
-
-        # Wrap in correct HF output format
-        encoder_outputs = BaseModelOutput(last_hidden_state=encoder_hidden_states)
-
-        # Frozen Whisper decoder
-        outputs = self.whisper(
-            encoder_outputs=encoder_outputs,
-            labels=labels  # required during training
-        )
-        return outputs
+        rnn_out, _ = self.rnn(x)                     # (B, mel_frames, H*)
+        mel = self.proj(rnn_out)                     # (B, mel_frames, 80)
+        mel = self.norm(mel)                         # (B, mel_frames, 80)
+        mel = mel.transpose(1, 2).contiguous()       # (B, 80, mel_frames)
+        
+        return mel
 
     def generate(self, x, **gen_kwargs):
         """
