@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import pdb
+
 class FeedForwardModule(nn.Module):
     def __init__(self, dim, ff_multiplier=4, dropout=0.1):
         super().__init__()
@@ -74,6 +76,15 @@ class BrainToTextModel(nn.Module):
             for _ in range(self.num_layers)
         ])
 
+        self.lstm = nn.LSTM(
+                input_size=self.hidden_dim,
+                hidden_size=self.hidden_dim,
+                num_layers=1,
+                batch_first=True,
+                bidirectional=True
+        )
+        self.lstm_output_dim = self.hidden_dim * 2 
+
         # Classifier
         self.classifier = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim),
@@ -91,17 +102,13 @@ class BrainToTextModel(nn.Module):
     def forward(self, x, lengths=None):
         # x shape: (batch_size, seq_len, input_dim)
         x = self.feature_encoder(x)
-
-        # Optional mask for variable lengths
-        mask = None
-        if lengths is not None:
-            max_len = x.size(1)
-            mask = torch.arange(max_len, device=x.device).expand(len(lengths), max_len) >= lengths.unsqueeze(1)
-
         # Conformer blocks
         for block in self.conformers:
-            x = block(x, mask=mask)
+            x = block(x)
 
+        packed_x = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        packed_out, _ = self.lstm(packed_x)
+        x, _ = nn.utils.rnn.pad_packed_sequence(packed_out, batch_first=True)
         
         logits = self.classifier(x)
         return logits

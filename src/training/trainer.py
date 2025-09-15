@@ -66,7 +66,7 @@ class Trainer:
         for epoch in range(self.num_epochs):
             # Training phase
             self.model.train()
-            train_loss = self._train_epoch(train_loader)         
+            train_loss = self._train_epoch(train_loader, epoch)         
             
             self.logger.info(f"Validating model after Epoch:{epoch}")
             self.model.eval()
@@ -92,7 +92,7 @@ class Trainer:
             # Get batch data
             inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
             
-
+            
             # Forward pass
             logits = self.model(inputs)
 
