@@ -2,6 +2,7 @@ import os
 import torch
 from tqdm import tqdm
 import torch.nn as nn
+from pathlib import Path
 
 from src.evaluation.eval import compute_phenome_error
 
@@ -65,7 +66,7 @@ class Trainer:
         for epoch in range(self.num_epochs):
             # Training phase
             self.model.train()
-            #train_loss = self._train_epoch(train_loader)         
+            train_loss = self._train_epoch(train_loader)         
             
             self.logger.info(f"Validating model after Epoch:{epoch}")
             self.model.eval()
@@ -74,14 +75,10 @@ class Trainer:
                 
             # Save best model
             if per < self.best_per:
-                    self.best_per = per
-                    self._save_checkpoint(epoch, val_loss, per)
-            # Save best model
-            if per < self.best_per:
                 self.best_per = per 
                 self._save_checkpoint(epoch, val_loss, per)
                 
-            #self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
+            self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
     
     def _train_epoch(self, train_loader, epoch):
         """Train for one epoch"""
@@ -185,11 +182,7 @@ class Trainer:
             'config': self.config
         }
         
-        
-        filename = f'checkpoint_epoch-{epoch+1:03d}_loss-{val_loss:.4f}_per-{per}.pth'
-        checkpoint_path = os.path.join(checkpoint_path, filename)
-        
+        checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')        
         torch.save(checkpoint, checkpoint_path)
         
-        best_model_path = os.path.join(os.path.dirname(checkpoint_path), 'best_model.pth')
-        torch.save(checkpoint, best_model_path)
+        self.logger.info(f"Saved model to {checkpoint_path}")
