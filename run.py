@@ -26,6 +26,7 @@ if __name__ == "__main__":
         val_loader = DatasetLoader(config, logger).get_dataloader(kind='val')
 
         model = BrainToTextModel(config)
+        logger.info(model)
         trainer = Trainer(model, config, logger)
         trainer.train(train_loader, val_loader)
 

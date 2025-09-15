@@ -14,11 +14,16 @@ run:
   random_seed: 42
 
 dataset:
-  data_folder: '/home/owais/Desktop/work/brain-2-text/data'
+  data_folder: '/home/owaismujtaba/work/brain-2-text/data'
+  num_workers: 4
+  pin_memory: True
+  prefetch_factor: 1
+
+
 
 training:
   epochs: 100
-  batch_size: 64
+  batch_size: 6
   learning_rate: 0.001
   load_checkpoint: False
   output_dir: 'outputs/'

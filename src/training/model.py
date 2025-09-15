@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+torch.cuda.empty_cache()
 import pdb
 
 class FeedForwardModule(nn.Module):
@@ -83,6 +83,9 @@ class BrainToTextModel(nn.Module):
                 batch_first=True,
                 bidirectional=True
         )
+        
+        self.lstm_output_dim = self.hidden_dim * (2 if self.lstm.bidirectional else 1)
+        self.proj = nn.Linear(self.lstm_output_dim, self.hidden_dim)
         self.lstm_output_dim = self.hidden_dim * 2 
 
         # Classifier
@@ -101,14 +104,15 @@ class BrainToTextModel(nn.Module):
     
     def forward(self, x, lengths=None):
         # x shape: (batch_size, seq_len, input_dim)
+        
         x = self.feature_encoder(x)
         # Conformer blocks
         for block in self.conformers:
             x = block(x)
-
-        packed_x = nn.utils.rnn.pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
-        packed_out, _ = self.lstm(packed_x)
-        x, _ = nn.utils.rnn.pad_packed_sequence(packed_out, batch_first=True)
+    
+        x, _ = self.lstm(x)
+        x = self.proj(x)
+       
         
         logits = self.classifier(x)
         return logits

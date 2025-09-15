@@ -135,7 +135,7 @@ class Trainer:
             total_per = 0
             per = 0
             pbar = tqdm(val_loader, desc='Validation')
-            for batch in val_loader:
+            for batch in pbar:
                 # Get batch data
                 inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
                 
@@ -150,7 +150,6 @@ class Trainer:
                     target_lengths = phenome_seq_lengths
                 )
                 
-                pdb.set_trace()
                 total_loss += loss.item()
                 per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
@@ -161,7 +160,7 @@ class Trainer:
     
     def _prepare_batch(self, batch):
         """Prepare batch data for training/validation"""
-        pdb.set_trace()
+        
         inputs = batch['neural_features']
         seq_class_ids = batch['seq_class_ids']
         seq_lengths = batch['seq_lengths']
