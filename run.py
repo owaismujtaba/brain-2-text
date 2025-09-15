@@ -18,7 +18,7 @@ if __name__ == "__main__":
             format=config.get('logging')['format']
         )
     if config.get('run')['mode'] == 'train':
-        print("Starting training process...")
+        logger.info("Starting training process...")
         from src.dataset.dataset import DatasetLoader
         from src.training.trainer import Trainer
         from src.training.model import BrainToTextModel
@@ -28,5 +28,11 @@ if __name__ == "__main__":
         model = BrainToTextModel(config)
         trainer = Trainer(model, config, logger)
         trainer.train(train_loader, val_loader)
+
+
+    if config.get('run')['mode'] == 'inference':
+        logger.info('Starting Inference')
+        from src.dataset.dataset import DatasetLoader
+        test_loader = DatasetLoader(config, logger).get_dataloader(kind='test')
 
         

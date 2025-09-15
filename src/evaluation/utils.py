@@ -1,6 +1,22 @@
 import torch
 import torchaudio.functional as F
 
+
+LOGIT_TO_PHONEME = [
+    'BLANK',
+    'AA', 'AE', 'AH', 'AO', 'AW',
+    'AY', 'B',  'CH', 'D', 'DH',
+    'EH', 'ER', 'EY', 'F', 'G',
+    'HH', 'IH', 'IY', 'JH', 'K',
+    'L', 'M', 'N', 'NG', 'OW',
+    'OY', 'P', 'R', 'S', 'SH',
+    'T', 'TH', 'UH', 'UW', 'V',
+    'W', 'Y', 'Z', 'ZH',
+    ' | ',
+]
+
+
+
 def compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths):
     """
     Calculate the Phoneme Error Rate (PER) between true and predicted sequences.

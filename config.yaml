@@ -20,6 +20,7 @@ training:
   epochs: 100
   batch_size: 64
   learning_rate: 0.001
+  load_checkpoint: False
   output_dir: 'outputs/'
   checkpoints_dir: 'checkpoints/'
 

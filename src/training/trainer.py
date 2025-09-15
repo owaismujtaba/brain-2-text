@@ -40,6 +40,8 @@ class Trainer:
         self.weight_decay = self.config.get('training', {}).get('weight_decay', 1e-5)
         self.checkpoint_dir = self.config.get('training', {}).get('checkpoints_dir')
         self.output_dir = self.config.get('training', {}).get('output_dir')
+        self.load_from_checkpoint = self.config.get('training', {}).get('load_checkpoint')
+        
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -61,7 +63,8 @@ class Trainer:
         
     def train(self, train_loader, val_loader):
         """Main training loop"""
-        
+        if self.load_from_checkpoint:
+            self.load_model_checkpoint()
         self.logger.info("Starting training process")
         for epoch in range(self.num_epochs):
             # Training phase
@@ -158,7 +161,7 @@ class Trainer:
     
     def _prepare_batch(self, batch):
         """Prepare batch data for training/validation"""
-
+        pdb.set_trace()
         inputs = batch['neural_features']
         seq_class_ids = batch['seq_class_ids']
         seq_lengths = batch['seq_lengths']
@@ -186,3 +189,29 @@ class Trainer:
         torch.save(checkpoint, checkpoint_path)
         
         self.logger.info(f"Saved model to {checkpoint_path}")
+
+    def load_model_checkpoint(self):
+        """Load model checkpoint"""
+        checkpoint_dir = self.config.get('training')['checkpoints_dir']
+        checkpoint_path = Path(checkpoint_dir, 'best_model.pt')
+        self.logger.info(f"Loading model from checkpoint: {checkpoint_path}")
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Checkpoint file not found: {checkpoint_path} or set load_checkpoint False"
+            )
+
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Load model, optimizer, and scheduler states
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        # Optional: load epoch and val_loss if needed
+        epoch = checkpoint.get('epoch', None)
+        val_loss = checkpoint.get('val_loss', None)
+        
+        self.logger.info(f"Loaded checkpoint from {checkpoint_path} (epoch {epoch}, val_loss {val_loss})")
+        
+        
