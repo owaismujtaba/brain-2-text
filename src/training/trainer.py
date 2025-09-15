@@ -12,11 +12,12 @@ class Trainer:
         self.config = config
         self.logger = logger
         self.logger.info("Initializing Trainer")
+        self._setup_config()
         self._device_setup()
-        self.optimizer, self.scheduler = model.configure_optimizers(config)
-        self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)  # Using 0 as the blank token
-        self.num_epochs = config.get('training', {}).get('num_epochs', 100)
-        self.eval_interval = config.get('training', {}).get('eval_interval', 10)
+        self.configure_optimizers()
+
+        self.criterion = nn.CTCLoss(blank=0, zero_infinity=True) 
+        self.best_loss = float('inf')
         self.best_per = float('inf')
 
     def _device_setup(self):
@@ -32,72 +33,98 @@ class Trainer:
             self.logger.info(f"Using device: {self.device}")
         self.model.to(self.device)
 
+    def _setup_config(self):
+        self.num_epochs = self.config.get('training', {}).get('num_epochs', 100)
+        self.lr = self.config.get('training', {}).get('learning_rate', 1e-3)
+        self.weight_decay = self.config.get('training', {}).get('weight_decay', 1e-5)
+        self.checkpoint_dir = self.config.get('training', {}).get('checkpoints_dir')
+        self.output_dir = self.config.get('training', {}).get('output_dir')
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    def configure_optimizers(self):
+        """Configure optimizer and learning rate scheduler"""
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay
+        )
         
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            factor=0.5,
+            patience=5,
+        )
         
         
     def train(self, train_loader, val_loader):
         """Main training loop"""
+        
         self.logger.info("Starting training process")
         for epoch in range(self.num_epochs):
             # Training phase
             self.model.train()
-            train_loss = self._train_epoch(train_loader)
+            #train_loss = self._train_epoch(train_loader)         
             
-            # Validation phase
-            if (epoch + 1) % self.eval_interval == 0:
-                self.model.eval()
-                self.logger.info("Validating model...")
-                 # Compute validation loss
-                val_loss, per = self._validate(val_loader)
-                 # Update learning rate scheduler
-                self.scheduler.step(val_loss)
+            self.logger.info(f"Validating model after Epoch:{epoch}")
+            self.model.eval()
+            val_loss, per = self._validate(val_loader)
+            self.scheduler.step(val_loss)
                 
-                # Save best model
-                if per < self.best_per:
+            # Save best model
+            if per < self.best_per:
                     self.best_per = per
                     self._save_checkpoint(epoch, val_loss, per)
+            # Save best model
+            if per < self.best_per:
+                self.best_per = per 
+                self._save_checkpoint(epoch, val_loss, per)
                 
-                self.logger.info(f'Epoch {epoch+1}/{self.num_epochs}:')
-                self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
+            #self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
     
-    def _train_epoch(self, train_loader):
+    def _train_epoch(self, train_loader, epoch):
         """Train for one epoch"""
-        epoch_loss = 0
+        epoch_loss = 0.0
         num_batches = len(train_loader)
-        
-        pbar = tqdm(train_loader, desc='Training')
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{self.num_epochs} - Training", unit="batch")
         for batch in pbar:
             self.optimizer.zero_grad()
-           
+
             # Get batch data
             inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
             
+
             # Forward pass
             logits = self.model(inputs)
+
             # Compute loss
             loss = self.criterion(
-                log_probs = torch.permute(logits.log_softmax(2), [1, 0, 2]),
-                targets = seq_class_ids,
-                input_lengths = seq_lengths,
-                target_lengths = phenome_seq_lengths
-            )           
-            
+                log_probs=torch.permute(logits.log_softmax(2), [1, 0, 2]),
+                targets=seq_class_ids,
+                input_lengths=seq_lengths,
+                target_lengths=phenome_seq_lengths
+            )
+
             # Backward pass
             loss.backward()
-            
+
             # Clip gradients
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            
+
             # Update weights
             self.optimizer.step()
-            
+
             current_loss = loss.item()
             epoch_loss += current_loss
-            
-            # Update progress bar with current loss
-            pbar.set_postfix({'loss': f'{current_loss:.4f}'})
-            
+
+            # Update progress bar with current + average loss
+            avg_loss = epoch_loss / (pbar.n + 1)
+            pbar.set_postfix({"batch_loss": f"{current_loss:.4f}", "avg_loss": f"{avg_loss:.4f}"})
+
         return epoch_loss / num_batches
+
     
     def _validate(self, val_loader):
         """Validate the model"""
@@ -107,7 +134,7 @@ class Trainer:
         with torch.no_grad():
             total_per = 0
             per = 0
-            pbar = tqdm(val_loader, desc='Validating')
+            pbar = tqdm(val_loader, desc='Validation')
             for batch in val_loader:
                 # Get batch data
                 inputs, seq_class_ids, seq_lengths, phenome_seq_lengths = self._prepare_batch(batch)
@@ -123,7 +150,7 @@ class Trainer:
                     target_lengths = phenome_seq_lengths
                 )
                 
-                
+                pdb.set_trace()
                 total_loss += loss.item()
                 per = compute_phenome_error(logits, seq_class_ids, seq_lengths, phenome_seq_lengths)
                 total_per += per
@@ -157,8 +184,7 @@ class Trainer:
             'val_loss': val_loss,
             'config': self.config
         }
-        checkpoint_path = self.config.get('training', {}).get('checkpoints_dir')
-        os.makedirs(checkpoint_path, exist_ok=True)
+        
         
         filename = f'checkpoint_epoch-{epoch+1:03d}_loss-{val_loss:.4f}_per-{per}.pth'
         checkpoint_path = os.path.join(checkpoint_path, filename)
