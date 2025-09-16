@@ -22,10 +22,8 @@ dataset:
 
 
 training:
-  epochs: 100
+  epochs: 4
   batch_size: 6
-  epochs: 2
-  batch_size: 1
   learning_rate: 0.001
   checkpoints_save_interval: 1
   load_checkpoint: True

@@ -15,7 +15,9 @@ class Trainer:
         self.config = config
         self.logger = logger
         log_info(logger, "Initializing Trainer")
-        self._setup_config()
+        self.logger.info(self.model)
+        
+        self._setup_config_parms()
         self._device_setup()
         self.configure_optimizers()
 
@@ -36,14 +38,13 @@ class Trainer:
             self.logger.info(f"Using device: {self.device}")
         self.model.to(self.device)
 
-    def _setup_config(self):
+    def _setup_config_parms(self):
         self.num_epochs = self.config.get('training', {}).get('num_epochs', 100)
         self.lr = self.config.get('training', {}).get('learning_rate', 1e-3)
         self.weight_decay = self.config.get('training', {}).get('weight_decay', 1e-5)
         self.checkpoint_dir = self.config.get('training', {}).get('checkpoints_dir')
         self.output_dir = self.config.get('training', {}).get('output_dir')
         self.load_from_checkpoint = self.config.get('training', {}).get('load_checkpoint')
-        self.checkpoints_save_interval = self.config.get('training', {}).get('checkpoints_save_interval')
         self.checkpoints_save_interval = self.config.get('training', {}).get('checkpoints_save_interval')
         
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -86,9 +87,7 @@ class Trainer:
                 self._save_checkpoint(epoch, val_loss, per, best=True)
             if epoch+1%self.checkpoints_save_interval == 0:
                 self._save_checkpoint(epoch, val_loss, per, best=False)
-                self._save_checkpoint(epoch, val_loss, per, best=True)
-            if epoch+1%self.checkpoints_save_interval == 0:
-                self._save_checkpoint(epoch, val_loss, per, best=False)
+                
                 
             self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
     
@@ -141,8 +140,8 @@ class Trainer:
         num_batches = len(val_loader)
         
         with torch.no_grad():
-            total_per = 0
-            per = 0
+            total_per = 0.0
+            per = 0.0
             pbar = tqdm(val_loader, desc='Validation')
             for batch in pbar:
                 # Get batch data
@@ -206,6 +205,7 @@ class Trainer:
         """Load model checkpoint"""
         checkpoint_path = self.config.get('training')['checkpoint_file']
         self.logger.info(f"Loading model from checkpoint: {checkpoint_path}")
+        checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(
                 f"Checkpoint file not found: {checkpoint_path} or set load_checkpoint False"

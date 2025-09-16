@@ -14,11 +14,7 @@ if __name__ == "__main__":
             format=config.get('logging')['format']
         )
     
-    log_info(logger, "Configuration Loaded:")
-    for key, value in config.items():
-        if key=='run':
-            logger.info(f"{key}: {value}")
-
+    
     
     
     log_info(logger, "Configuration Loaded:")
@@ -41,10 +37,8 @@ if __name__ == "__main__":
 
     if config.get('run')['mode'] == 'inference':
         log_info(logger,'Starting Inference')
-        log_info(logger,'Starting Inference')
         from src.dataset.dataset import DatasetLoader
         from src.inference.inference import Inference
-        pdb.set_trace()
         test_loader = DatasetLoader(config, logger).get_dataloader(kind='test')
 
         inferencer = Inference(
