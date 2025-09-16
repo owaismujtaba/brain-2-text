@@ -2,9 +2,8 @@ import os
 import torch
 import h5py
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
-
-from src.dataset.utils import get_all_files, collate_fn
+from src.utils import log_info
+from src.dataset.utils import collate_fn
 
 
 class H5pyDataset(Dataset):
@@ -14,11 +13,11 @@ class H5pyDataset(Dataset):
         Expects config to be a dict-like object containing 'data_dir'.
         Instead of loading all data into memory, only indexes are stored and data is loaded at runtime.
         """
-        
+        from .utils import get_all_files
         self.logger = logger
-        self.config = config
-        self._setup_config_parms()
-
+        self.data_dir = config.get('dataset', {}).get('data_folder', None)
+        if not self.data_dir:
+            raise ValueError("Config must contain 'data_dir' key.")
 
         # Get all HDF5 files
         self.all_filepaths = get_all_files(self.data_dir, extensions=('.hdf5',))
@@ -26,20 +25,13 @@ class H5pyDataset(Dataset):
         self.index_map = []  # List of (file_path, trial_key) tuples
 
         self.build_index()  # Build index of all trials
-    
-    def _setup_config_parms(self):
-        self.data_dir = self.config.get('dataset', {}).get('data_folder', None)
-        if not self.data_dir:
-            raise ValueError("Config must contain 'data_dir' key.")
-        
-        
 
     def filter_filepaths(self, keyword):
         self.logger.info(f"Filtering files in {self.data_dir} with keyword '{keyword}'")
         filtered_files = [f for f in self.all_filepaths if keyword in os.path.basename(f)]
         if not filtered_files:
             self.logger.warning(f"No files found with keyword '{keyword}' in directory '{self.data_dir}'")
-        return filtered_files
+        return filtered_files[:1]
 
     def build_index(self):
         """Builds an index of all trials across the relevant files. Do not load all data into memory."""
@@ -90,33 +82,14 @@ class DatasetLoader:
     def __init__(self, config, logger):
         self.logger = logger
         self.config = config
-        self._setup_config_parms()
-
-    def _setup_config_parms(self):
-        self.batch_size = self.config.get('training', {}).get('batch_size', 16)
-        self.num_workers = self.config.get('dataset', {}).get('num_workers', 4)  # configurable
-        self.pin_memory = self.config.get('dataset', {}).get('pin_memory', True)
-        self.prefetch_factor = self.config.get('dataset', {}).get('prefetch_factor', 2)
 
     def get_dataloader(self, kind='train'):
         
+        log_info(self.logger, f'Creating DatsetLoader for {kind}')
         dataset = H5pyDataset(self.config, self.logger, kind)
         batch_size = self.config.get('training', {}).get('batch_size', 16)
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            collate_fn=collate_fn,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            prefetch_factor=self.prefetch_factor
-        )
-        
-        self.logger.info(
-            f"Created DataLoader for {kind} with batch size {batch_size}, "
-            f"num_workers={self.num_workers}, pin_memory={self.pin_memory}, "
-            f"prefetch_factor={self.prefetch_factor}"
-        )
+        dataloader = DataLoader(dataset, batch_size, shuffle=True, collate_fn=collate_fn)
+        self.logger.info(f"Created DataLoader for {kind} with batch size {batch_size}")
         return dataloader
 
 
