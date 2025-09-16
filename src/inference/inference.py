@@ -70,3 +70,9 @@ class Inference:
                 self.transcripts_full.append(transcripts)
 
         self.logger.info("Inferencde completed")
+
+        return (
+            self.logits_full, 
+            self.seq_class_ids_full, 
+            self.transcripts_full
+        )
