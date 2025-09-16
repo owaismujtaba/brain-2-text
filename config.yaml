@@ -4,10 +4,10 @@ experiment:
   version: 1.0.0
 
 logging:
-  name: brain2text
+  name: Training
   level: INFO
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-  log_file_path: 'logs/experiment.log'
+  log_file_path: 'logs/training.log'
 
 run:
   mode: train  # Options: train, inference
@@ -24,10 +24,14 @@ dataset:
 training:
   epochs: 100
   batch_size: 6
+  epochs: 2
+  batch_size: 1
   learning_rate: 0.001
-  load_checkpoint: False
+  checkpoints_save_interval: 1
+  load_checkpoint: True
   output_dir: 'outputs/'
   checkpoints_dir: 'checkpoints/'
+  checkpoint_file : 'checkpoints/best_model.pt'
 
 model:
   input_dim: 512 

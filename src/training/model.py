@@ -61,7 +61,7 @@ class BrainToTextModel(nn.Module):
         
         # Feature encoder
         super().__init__()        
-        self._setup_config(config)
+        self._setup_config_parm(config)
         
         # Layers
         self.feature_encoder = nn.Sequential(
@@ -95,7 +95,7 @@ class BrainToTextModel(nn.Module):
             nn.Dropout(self.dropout),
             nn.Linear(self.hidden_dim, self.num_classes)
         )
-    def _setup_config(self, config):
+    def _setup_config_parm(self, config):
         self.input_dim = config.get('model', {}).get('input_dim', 512)
         self.hidden_dim = config.get('model', {}).get('hidden_dim', 512)
         self.num_layers = config.get('model', {}).get('num_layers', 2)
@@ -106,6 +106,7 @@ class BrainToTextModel(nn.Module):
         # x shape: (batch_size, seq_len, input_dim)
         
         x = self.feature_encoder(x)
+        
         # Conformer blocks
         for block in self.conformers:
             x = block(x)
@@ -115,6 +116,7 @@ class BrainToTextModel(nn.Module):
        
         
         logits = self.classifier(x)
+        
         return logits
 
     

@@ -1,6 +1,7 @@
 import os
 
 from src.utils import load_yaml_config, log_info
+from src.utils import load_yaml_config, log_info
 from src.logging.log import setup_logger
 import pdb
 
@@ -12,6 +13,13 @@ if __name__ == "__main__":
             level=config.get('logging')['level'],
             format=config.get('logging')['format']
         )
+    
+    log_info(logger, "Configuration Loaded:")
+    for key, value in config.items():
+        if key=='run':
+            logger.info(f"{key}: {value}")
+
+    
     
     log_info(logger, "Configuration Loaded:")
     for key, value in config.items():
@@ -33,10 +41,25 @@ if __name__ == "__main__":
 
     if config.get('run')['mode'] == 'inference':
         log_info(logger,'Starting Inference')
+        log_info(logger,'Starting Inference')
         from src.dataset.dataset import DatasetLoader
         from src.inference.inference import Inference
         pdb.set_trace()
         test_loader = DatasetLoader(config, logger).get_dataloader(kind='test')
+
+        inferencer = Inference(
+            config=config,
+            logger=logger
+        )
+
+        logits, seq_class_ids, transcripts = inferencer.inference(
+            dataloader=test_loader
+        )
+
+
+
+        
+
 
         inferencer = Inference(
             config=config,
