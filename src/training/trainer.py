@@ -5,6 +5,7 @@ import torch.nn as nn
 from pathlib import Path
 
 from src.evaluation.eval import compute_phenome_error
+from src.utils import log_info
 
 import pdb
 class Trainer:
@@ -12,7 +13,7 @@ class Trainer:
         self.model = model
         self.config = config
         self.logger = logger
-        self.logger.info("Initializing Trainer")
+        log_info(logger, "Initializing Trainer")
         self._setup_config()
         self._device_setup()
         self.configure_optimizers()
@@ -41,6 +42,7 @@ class Trainer:
         self.checkpoint_dir = self.config.get('training', {}).get('checkpoints_dir')
         self.output_dir = self.config.get('training', {}).get('output_dir')
         self.load_from_checkpoint = self.config.get('training', {}).get('load_checkpoint')
+        self.checkpoints_save_interval = self.config.get('training', {}).get('checkpoints_save_interval')
         
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
@@ -75,11 +77,13 @@ class Trainer:
             self.model.eval()
             val_loss, per = self._validate(val_loader)
             self.scheduler.step(val_loss)
-                
+            
             # Save best model
             if per < self.best_per:
                 self.best_per = per 
-                self._save_checkpoint(epoch, val_loss, per)
+                self._save_checkpoint(epoch, val_loss, per, best=True)
+            if epoch+1%self.checkpoints_save_interval == 0:
+                self._save_checkpoint(epoch, val_loss, per, best=False)
                 
             self.logger.info(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, PER: {per:.4f}')
     
@@ -172,7 +176,7 @@ class Trainer:
 
         return inputs, seq_class_ids, seq_lengths, phenome_seq_lengths
     
-    def _save_checkpoint(self, epoch, val_loss, per):
+    def _save_checkpoint(self, epoch, val_loss, per, best=False):
         """Save model checkpoint"""
         self.logger.info(f"Saving checkpoint for epoch {epoch+1}. ::: val_loss {val_loss:.4f} PER: {per:.4f}")
         checkpoint = {
@@ -183,18 +187,20 @@ class Trainer:
             'val_loss': val_loss,
             'config': self.config
         }
-        
-        checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')        
+        if best==True:
+            checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')  
+        else:
+            filename = f"checkpoint_epoch-{epoch}_loss-{val_loss}_per-{per}.pt"
+            checkpoint_path = Path(self.checkpoint_dir, filename)      
         torch.save(checkpoint, checkpoint_path)
         
         self.logger.info(f"Saved model to {checkpoint_path}")
 
     def load_model_checkpoint(self):
         """Load model checkpoint"""
-        checkpoint_dir = self.config.get('training')['checkpoints_dir']
-        checkpoint_path = Path(checkpoint_dir, 'best_model.pt')
+        checkpoint_path = self.config.get('training')['checkpoint_file']
         self.logger.info(f"Loading model from checkpoint: {checkpoint_path}")
-        checkpoint_path = Path(checkpoint_path)
+        checkpoint_path = Path(os.getcwd(), checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(
                 f"Checkpoint file not found: {checkpoint_path} or set load_checkpoint False"
