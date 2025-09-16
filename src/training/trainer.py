@@ -192,15 +192,11 @@ class Trainer:
             'val_loss': val_loss,
             'config': self.config
         }
+
         if best==True:
             checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')  
         else:
-            filename = f"checkpoint_epoch-{epoch}_loss-{val_loss}_per-{per}.pt"
-            checkpoint_path = Path(self.checkpoint_dir, filename)      
-        if best==True:
-            checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')  
-        else:
-            filename = f"checkpoint_epoch-{epoch}_loss-{val_loss}_per-{per}.pt"
+            filename = f"checkpoint_epoch-{epoch}_loss-{val_loss:.2f}_per-{per:.2f}.pt"
             checkpoint_path = Path(self.checkpoint_dir, filename)      
         torch.save(checkpoint, checkpoint_path)
         
@@ -226,6 +222,6 @@ class Trainer:
         epoch = checkpoint.get('epoch', None)
         val_loss = checkpoint.get('val_loss', None)
         
-        self.logger.info(f"Loaded checkpoint from {checkpoint_path} (epoch {epoch}, val_loss {val_loss})")
+        self.logger.info(f"Loaded checkpoint from {checkpoint_path} (epoch {epoch}, val_loss {val_loss:.2f})")
         
         
