@@ -22,11 +22,11 @@ dataset:
 
 
 training:
-  epochs: 4
+  epochs: 1000
   batch_size: 6
   learning_rate: 0.001
-  checkpoints_save_interval: 1
-  load_checkpoint: True
+  checkpoints_save_interval: 50
+  load_checkpoint: False
   output_dir: 'outputs/'
   checkpoints_dir: 'checkpoints/'
   checkpoint_file : 'checkpoints/best_model.pt'

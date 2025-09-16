@@ -39,7 +39,7 @@ class Trainer:
         self.model.to(self.device)
 
     def _setup_config_parms(self):
-        self.num_epochs = self.config.get('training', {}).get('num_epochs', 100)
+        self.num_epochs = self.config.get('training', {}).get('epochs', 100)
         self.lr = self.config.get('training', {}).get('learning_rate', 1e-3)
         self.weight_decay = self.config.get('training', {}).get('weight_decay', 1e-5)
         self.checkpoint_dir = self.config.get('training', {}).get('checkpoints_dir')
@@ -195,7 +195,7 @@ class Trainer:
         if best==True:
             checkpoint_path = Path(self.checkpoint_dir, f'best_model.pt')  
         else:
-            filename = f"checkpoint_epoch-{epoch}_loss-{val_loss:.2f}_per-{per:.2f}.pt"
+            filename = f"checkpoint_epoch-{epoch+1}_loss-{val_loss:.2f}_per-{per:.2f}.pt"
             checkpoint_path = Path(self.checkpoint_dir, filename)      
         torch.save(checkpoint, checkpoint_path)
         
