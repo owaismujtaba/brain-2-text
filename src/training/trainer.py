@@ -28,8 +28,14 @@ class Trainer:
     def _device_setup(self):
         """Setup device and move model to device"""
         self.logger.info("Setting up device")
+
+        if self.device == 'cpu':
+            self.device = torch.device('cpu')
+            return
+
         if torch.cuda.is_available():
             self.device = torch.device('cuda')
+            self.logger.info(f"Using device: {self.device}")
             if torch.cuda.device_count() > 1:
                 self.logger.info(f"Using {torch.cuda.device_count()} GPUs")
                 self.model = nn.DataParallel(self.model)
@@ -46,6 +52,7 @@ class Trainer:
         self.output_dir = self.config.get('training', {}).get('output_dir')
         self.load_from_checkpoint = self.config.get('training', {}).get('load_checkpoint')
         self.checkpoints_save_interval = self.config.get('training', {}).get('checkpoints_save_interval')
+        self.device = self.config.get('device', {}).get('name')
         
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         os.makedirs(self.output_dir, exist_ok=True)
