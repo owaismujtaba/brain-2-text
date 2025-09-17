@@ -1,14 +1,14 @@
 import torch
 from pathlib import Path
 from tqdm import tqdm
-from src.training.model import BrainToTextModel
+from src.training.model import GRUDecoderAttention
 
-
+import pdb
 class Inference:
     def __init__(self, config, logger):
         self.config = config
         self.logger = logger
-        self.model = BrainToTextModel(config=config)
+        self.model = GRUDecoderAttention(config=config)
         self._device_setup()
         self.model.to(self.device)
         self._load_model_checkpoint()
@@ -44,8 +44,9 @@ class Inference:
         seq_class_ids = batch['seq_class_ids']
         transcripts = batch['sentence_label']
         inputs = inputs.to(self.device)
+        
         seq_class_ids = seq_class_ids.to(self.device)
-        transcripts = transcripts.to(self.device)
+        
 
         return inputs, seq_class_ids, transcripts 
     
@@ -70,12 +71,6 @@ class Inference:
                 self.transcripts_full.append(transcripts)
 
         self.logger.info("Inferencde completed")
-
-        return (
-            self.logits_full, 
-            self.seq_class_ids_full, 
-            self.transcripts_full
-        )
 
         return (
             self.logits_full, 
