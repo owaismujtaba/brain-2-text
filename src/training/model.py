@@ -4,6 +4,153 @@ import torch.nn.functional as F
 torch.cuda.empty_cache()
 import pdb
 
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class ResidualBlock(nn.Module):
+    """Residual feedforward block: Linear -> ReLU -> BN -> Dropout -> Linear + skip"""
+    def __init__(self, dim, hidden_dim, dropout=0.3):
+        super().__init__()
+        self.fc1 = nn.Linear(dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, dim)
+        self.norm = nn.BatchNorm1d(dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        residual = x
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        x = self.norm(x)
+        return F.relu(x + residual)
+
+
+class GRUDecoderAttention(nn.Module):
+
+    
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self._setup_config_parms()
+        
+
+        # Dropout
+        self.input_dropout = nn.Dropout(self.input_dropout)
+
+        # Input dimension adjustment for patching
+        self.input_size = self.neural_dim * (self.patch_size if self.patch_size > 0 else 1)
+
+        # GRU backbone
+        self.gru = nn.GRU(
+            input_size=self.input_size,
+            hidden_size=self.n_units,
+            num_layers=self.n_layers,
+            dropout=self.gru_dropout if self.n_layers > 1 else 0.0,
+            batch_first=True,
+            bidirectional=False,
+        )
+
+        out_dim = self.n_units * (2 if self.gru.bidirectional else 1)
+
+        # Multi-head self-attention on GRU outputs
+        self.attn = nn.MultiheadAttention(
+            embed_dim=out_dim,
+            num_heads=self.attn_heads,
+            dropout=self.attn_dropout,
+            batch_first=True,
+        )
+
+        # Residual FC head (stacked)
+        self.fc_blocks = nn.Sequential(*[
+            ResidualBlock(out_dim, self.hidden_fc, dropout=0.3)
+            for _ in range(self.n_resblocks)
+        ])
+
+        # Final classification
+        self.out = nn.Linear(out_dim, self.n_classes)
+        nn.init.xavier_uniform_(self.out.weight)
+
+        # Learnable initial hidden states
+        self.h0 = nn.Parameter(
+            torch.empty(self.n_layers * (2 if self.gru.bidirectional else 1), 
+                1, 
+                self.n_units
+            )
+        )
+        nn.init.xavier_uniform_(self.h0)
+
+        self.norm = nn.LayerNorm(self.input_size)
+
+    def _setup_config_parms(self):
+        self.neural_dim = self.config.get('model', {}).get('input_dim', 512)
+        self.n_units = self.config.get('model', {}).get('n_units', 512)
+        self.n_classes = self.config.get('model', {}).get('num_classes', 512)
+        self.n_layers = self.config.get('model', {}).get('num_layers', 4)
+        self.attn_heads = self.config.get('model', {}).get('attn_heads', 4)
+        self.attn_dropout = self.config.get('model', {}).get('attn_dropout', 0.1)
+        self.input_dropout = self.config.get('model', {}).get('input_dropout', 0.1)
+        self.gru_dropout = self.config.get('model', {}).get('gru_dropout', 0.1)
+        self.n_resblocks = self.config.get('model', {}).get('n_resblocks', 4)
+        self.patch_size = self.config.get('model', {}).get('patch_size', 512)
+        self.patch_stride = self.config.get('model', {}).get('patch_stride', 512)
+        self.hidden_fc = self.config.get('model', {}).get('hidden_fc', 512)
+    
+
+    def forward(self, x, states=None, return_state=False):
+        """
+        x: [B, T, D]
+        """
+        B, T, D = x.shape
+        x = self.input_dropout(x)
+        
+        # Optional patching
+        if self.patch_size > 0:
+            x = x.permute(0, 2, 1)  # [B, D, T]
+            patches = x.unfold(2, self.patch_size, self.patch_stride)  # [B, D, num_patches, patch_size]
+            x = patches.permute(0, 2, 3, 1).reshape(B, -1, self.input_size)  # [B, num_patches, input_size]
+
+        x = self.norm(x)
+
+        # Init hidden state
+        if states is None:
+            states = self.h0.expand(-1, B, -1).contiguous()
+
+        # GRU
+        
+        output, hidden_states = self.gru(x, states)  # [B, T, H]
+
+        # Self-attention (contextual refinement)
+        attn_out, _ = self.attn(output, output, output)  # [B, T, H]
+        output = output + attn_out  # residual connection
+
+        # Sequence or pooled output
+        
+        out_fc = self.fc_blocks(output.reshape(-1, output.size(-1)))  # [B*T, H]
+        logits = self.out(out_fc).view(B, -1, self.n_classes)  # [B, T, C]
+        
+        if return_state:
+            return logits, hidden_states
+        
+        return logits
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class FeedForwardModule(nn.Module):
     def __init__(self, dim, ff_multiplier=4, dropout=0.1):
         super().__init__()
@@ -55,7 +202,7 @@ class ConformerBlock(nn.Module):
         x = self.layer_norm2(x)
         return x
 
-class BrainToTextModel(nn.Module):
+class BrainToTextModelConformer(nn.Module):
     def __init__(self, config):
         super().__init__()
         
