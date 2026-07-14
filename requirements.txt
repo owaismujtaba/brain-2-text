@@ -1,1 +1,9 @@
-torch
+torch>=2.4.0
+openai-whisper>=20250625
+styletts2>=0.1.4
+TTS>=0.22.0            # Coqui TTS, used by scripts/recheck_flagged.py
+h5py>=3.11.0
+librosa>=0.10.2
+numpy>=1.24.0
+PyYAML>=6.0
+tqdm>=4.67.0
